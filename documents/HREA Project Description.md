@@ -6,12 +6,38 @@ From [ERM Applications](https://au.forms.ethicalreviewmanager.com/Personalisatio
 
 ## Project teams roles & responsibilities
 
-1. Logan Wu, PhD student (WEHI, University of Melbourne, Victorian Department of Health)
-2. Ivo Mueller, Lab head & professor (WEHI, University of Melbourne)
+- Logan Wu<sup>1, 2, 3</sup> — PhD student, wu.l@wehi.edu.au
+- Eamon Conway<sup>1</sup> — Postdoctoral research fellow, conway.e@wehi.edu.au
+- Ivo Mueller<sup>1, 2</sup> — Lab head & professor, mueller@wehi.edu.au
+
+1. WEHI
+2. University of Melbourne
+3. Victorian Department of Health
 
 ---
 
 ## Resources
+
+Resources required for this research:
+
+- Linelist of all confirmed Victorian COVID-19 cases, including:
+  - Case number
+  - Calculated onset date
+  - Residential address (with opportunity to obfuscate)
+  - Coordinates (either at address or aggregated, e.g. at SA1)
+  - Genomic cluster
+  - Basic demographic information (e.g. age, date notified)
+  - Any connected outbreaks (in separate table)
+
+- Case links
+  - Source and target case numbers
+  - Relationship, when available
+
+- Outbreaks
+  - Outbreak declared date
+  - Industry
+
+Data are requested in tabular (CSV) form.
 
 ---
 
@@ -19,7 +45,13 @@ From [ERM Applications](https://au.forms.ethicalreviewmanager.com/Personalisatio
 
 ### Literature review
 
+
+
 ### Rationale
+
+Estimates of the reproductive number for infectious disease are used in health surveillance systems to monitor the growth or reduction of a disease in a population. When sufficient resources are available, e.g., contact tracing for COVID-19 before elimination in November 2020, case interviews can be used to reconstruct the transmission network. However, when resources are insufficient, e.g., for other communicable diseases or for insufficiently resourced authorities outside of Victoria, approximate methods can be used.
+
+Using techniques derived from the reconstruction of social media and malaria transmission networks, we will develop methods to estimate case-level reproductive numbers that vary throughout space and time. These can be plotted in space to identify epidemic hotspots, and/or over time to identify trends.
 
 ### Research questions
 
