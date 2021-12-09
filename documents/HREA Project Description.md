@@ -2,6 +2,12 @@
 
 From [ERM Applications](https://au.forms.ethicalreviewmanager.com/Personalisation/DisplayPage/9)
 
+## Summary
+
+Tracking the growth of an epidemic is an important part of infection management, control, and prevention. A common population-level metric for characterising growth is the effective reproduction number (R<sub>eff</sub>), or the average number of people who are infected by each case. When R<sub>eff</sub> is above 1, the epidemic is growing. When it is equal to 1 the epidemic is stable, and when it is below 1 the epidemic is shrinking. However, R<sub>eff</sub> is a population-level measure and cannot be disaggregated by sub-populations once calculated.
+
+This research will apply novel methods developed for malaria surveillance to the Victorian COVID-19 contact tracing database. These methods calculate estimates for the case-level reproduction number R<sub>c</sub>, which is a statistical estimate unique to each case. By assigning a metric to each COVID-19 case, these methods will allow operators to analyse epidemic growth by subregion (e.g., suburb) and over time, identifying potential hot-spots and populations.
+
 ---
 
 ## Project teams roles & responsibilities
@@ -22,12 +28,10 @@ Resources required for this research:
 
 - Linelist of all confirmed Victorian COVID-19 cases, including:
   - Case number
-  - Calculated onset date
-  - Residential address (with opportunity to obfuscate)
-  - Coordinates (either at address or aggregated, e.g. at SA1)
+  - Residential address (with opportunity to obfuscate by hashing: e.g., everyone at '1 Main Street' is assigned to 'Address A' instead)
+  - Coordinates (either at address or aggregated, e.g. at SA1. Address is preferred but SA1 centroid may make approval easier. I can provide code to Data Provision.)
   - Genomic cluster
-  - Basic demographic information (e.g. age, date notified)
-  - Any connected outbreaks (in separate table)
+  - Medical information (e.g. age, calculated onset date, date notified, date symptomatic, date isolated where available)
 
 - Case links
   - Source and target case numbers
