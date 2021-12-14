@@ -65,7 +65,7 @@ Routledge et al. extend the NetRate algorithm for the transmission network of ma
 
 Estimates of the reproductive number for infectious disease are used in health surveillance systems to monitor the growth or reduction of a disease in a population. When sufficient resources are available, e.g., contact tracing for COVID-19 before elimination in November 2020, case interviews can be used to reconstruct the transmission network. However, when resources are insufficient, e.g., for other communicable diseases or for insufficiently resourced authorities outside of Victoria, approximate methods can be used.
 
-Using techniques derived from the reconstruction of social media and malaria transmission networks, we will develop methods to estimate case-level reproductive numbers that vary throughout space and time. These can be plotted in space to identify epidemic hot-spots, and/or over time to identify trends.
+Using techniques derived from the reconstruction of social media and malaria transmission networks, we will develop methods to estimate case-level reproductive numbers that vary throughout space and time. These can be plotted in space to identify epidemic hot-spots, and/or over time to identify trends. Spatial maps derived from these estimates can alert health authorities to concerning trends at a more granular spatial resolution than the typical R<sub>eff</sub>, and assess targeted interventions independently from administrative boundaries (e.g. local government area or public health unit catchment). The potential to estimate the status of an epidemic at the person-level allows for more focused interventions, reducing the economic burden on the public from unnecessary restrictions.
 
 ### Research questions
 
@@ -161,7 +161,7 @@ These data will not be retained.
 
 ### Project closure processes
 
-
+Minimal project closure is required for this data-only study. Data will be deleted and source code (without data) will be publicly uploaded to a server such as GitHub.
 
 ### Plans for sharing and/or future use of data and/or follow-up research
 
