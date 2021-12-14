@@ -1,6 +1,6 @@
 # Estimating Individual COVID-19 Reproduction Numbers From Data
 
-From [ERM Applications](https://au.forms.ethicalreviewmanager.com/Personalisation/DisplayPage/9)
+<!-- From [ERM Applications](https://au.forms.ethicalreviewmanager.com/Personalisation/DisplayPage/9) -->
 
 ## Summary
 
@@ -107,7 +107,7 @@ Data on COVID-19 cases and outbreaks have been collected by the Victorian Depart
 
 ### Data management
 
-*TODO: Include a data management plan in accordance with [National Statement](https://www.nhmrc.gov.au/about-us/publications/national-statement-ethical-conduct-human-research-2007-updated-2018) 3.1.45 and 3.1.56*
+<!-- *TODO: Include a data management plan in accordance with [National Statement](https://www.nhmrc.gov.au/about-us/publications/national-statement-ethical-conduct-human-research-2007-updated-2018) 3.1.45 and 3.1.56* -->
 
 <!-- For all research, researchers should develop a data management plan that addresses their intentions related to generation, collection, access, use, analysis, disclosure, storage, retention, disposal, sharing and re-use of data and information, the risks associated with these activities and any strategies for minimising those risks. The plan should be developed as early as possible in the research process and should include, but not be limited to, details regarding:
 
