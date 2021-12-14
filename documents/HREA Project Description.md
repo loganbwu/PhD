@@ -14,7 +14,9 @@ This research will apply novel methods developed for malaria surveillance to the
 
 - Logan Wu<sup>1, 2, 3</sup> — PhD student, wu.l@wehi.edu.au
 - Eamon Conway<sup>1</sup> — Postdoctoral research fellow, conway.e@wehi.edu.au
-- Ivo Mueller<sup>1, 2</sup> — Lab head & professor, mueller@wehi.edu.au
+- Ivo Mueller<sup>1, 2</sup> — Principal supervisor, lab head & professor, mueller@wehi.edu.au
+- Jodie McVernon<sup>2</sup> — Co-supervisor, professor, j.mcvernon@unimelb.edu.au
+- James McCaw <sup>2</sup> — Co-supervisor, lab head & professor, jamesm@unimelb.edu.au
 
 1. WEHI
 2. University of Melbourne
