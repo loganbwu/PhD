@@ -13,10 +13,10 @@ This research will apply novel methods developed for malaria surveillance to the
 ## Project teams roles & responsibilities
 
 - Logan Wu<sup>1, 2, 3</sup> — PhD student, wu.l@wehi.edu.au
-- Eamon Conway<sup>1</sup> — Postdoctoral research fellow, conway.e@wehi.edu.au
-- Ivo Mueller<sup>1, 2</sup> — Principal supervisor, lab head & professor, mueller@wehi.edu.au
-- Jodie McVernon<sup>2</sup> — Co-supervisor, professor, j.mcvernon@unimelb.edu.au
-- James McCaw <sup>2</sup> — Co-supervisor, lab head & professor, jamesm@unimelb.edu.au
+- Dr. Eamon Conway<sup>1</sup> — Postdoctoral research fellow, conway.e@wehi.edu.au
+- Prof. Ivo Mueller<sup>1, 2</sup> — Principal supervisor, mueller@wehi.edu.au
+- Prof. Jodie McVernon<sup>2</sup> — Co-supervisor, j.mcvernon@unimelb.edu.au
+- Prof. James McCaw <sup>2</sup> — Co-supervisor, jamesm@unimelb.edu.au
 
 1. WEHI
 2. University of Melbourne
@@ -128,7 +128,9 @@ The security arrangements specified in the data management plan should be propor
 
 **Storage and security:** The datasets will be transferred to the researcher(s) using the Department of Health's secure SharePoint storage; after they have been received, the Department of Health can delete the one-off request. The researcher(s) will only store data on password-protected, WEHI-administered machines. If data transfer between researchers is required, we will use the University of Melbourne's secure MediaFlux service. Data will be retained until the end of the research project. Confidential and identifiable data will not be published - any publications will only include aggregated, unidentifiable results.
 
-Individual coordinates will be aggregated (adjusted) to the SA1 centroid, which is shared by 200-400 people. Street address will be recoded to obfuscated values (e.g. '1 Main St' becomes 'A', '2/3 Oak Street' becomes 'B'). Ages will be binned in 5-year increments to further prevent anyone with access to the data from identifying individuals.
+Individual coordinates will be aggregated (adjusted) to the SA1 centroid, which is shared by 200-400 people. Street address will be recoded to obfuscated values (using a cryptographic ‘salting’ and ‘hashing’ technique. A simplification of this is '1 Main St' becomes 'A', '2/3 Oak Street' becomes 'B', in such a way so that the obfuscation cannot be reversed). Ages will be binned in 5-year increments to further prevent anyone with access to the data from identifying individuals.
+
+There are no labelling or protective marking requirements.
 
 **Sharing and disclosure:** Individual-level data will not be shared outside the project team. Any members that access the data must do so on a WEHI or Department of Health-administered machine, and access must be for this research project.
 
