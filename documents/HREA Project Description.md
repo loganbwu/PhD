@@ -51,17 +51,18 @@ Data are requested in tabular (CSV) form.
 
 ### Literature review
 
-Tracking the growth of an epidemic is an important part of infection management, control, and prevention. Estimates for the effective reproduction number, R<sub>eff</sub>, are a tool to indicate whether an epidemic is controlled or uncontrolled, and whether control strategies need to be changed. However, in low transmission scenarios, R<sub>eff</sub> is highly influenced by uncertainty from imported cases. It is also a population-level measure that is not applicable to individuals and cannot be disaggregated by sub-populations once calculated.
+Tracking the growth of an epidemic is an important part of infection management, control, and prevention. Estimates for the effective reproduction number, R<sub>eff</sub>, are a tool to indicate whether an epidemic is controlled or uncontrolled, and whether control strategies need to be changed. However, in low transmission scenarios, R<sub>eff</sub> is highly influenced by uncertainty from imported cases. It is also a population-level measure that is not applicable to individuals and cannot be disaggregated by sub-populations once calculated. A limitation of using R<sub>eff</sub> can be seen in the spatial analysis of South Korea in 2020<sup>1</sup>, where analysis of reproduction rates is reported by province or by cluster/outbreak; a sub-province or cross-province analysis (independent of provincial boundaries) is not possible.
 
-An alternative metric and method for analysing disease spread is presented in the NetRate algorithm<sup>1</sup>. NetRate models the unknown diffusion of information (such as social media posts) or disease at an individual level. Gomez-Rodriguez et al. use serial interval distributions to produce a maximum-likelihood-estimate of the true transmission network.
+An alternative metric and method for analysing disease spread is presented in the NetRate algorithm<sup>2</sup>. NetRate models the hidden diffusion of disease at an individual level. Gomez-Rodriguez et al. use serial interval distributions to produce a maximum-likelihood-estimate of the true transmission network.
 
-Routledge et al. extend the NetRate algorithm for the transmission network of malaria within a community<sup>2</sup> by allowing infections to be imported from unobserved individuals with a user-chosen likelihood threshold. This network estimates of the number of downstream cases per case (the case reproductive number R<sub>c</sub>), which can be analysed for spatial and temporal trends. Outputs include maps of R<sub>c</sub> estimates that also differentiate between local and imported transmission - an important capability when disease incidence is comparatively high in a neighbouring jurisdiction. These R<sub>c</sub> maps are also used to create short-term forecasts<sup>3</sup> for areas at a greater granularity than the overall study area, something that is not possible with the R<sub>eff</sub>.
+Routledge et al. extend the NetRate algorithm for the transmission network of malaria within a community<sup>3</sup> by allowing infections to be imported from unobserved individuals with a user-chosen likelihood threshold. This network estimates of the number of downstream cases per case (the case reproductive number R<sub>c</sub>), which can be analysed for spatial and temporal trends. Outputs include maps of R<sub>c</sub> estimates that also differentiate between local and imported transmission - an important capability when disease incidence is comparatively high in a neighbouring jurisdiction. These R<sub>c</sub> maps are also used to create short-term forecasts<sup>4</sup> for areas at a greater granularity than the overall study area, something that is not possible with the R<sub>eff</sub>.
 
 **References**
 
-1. M. Gomez-Rodriguez et al., *Uncovering the Temporal Dynamics of Diffusion Networks*, 2011.
-2. I. Routledge et al., *Estimating spatiotemporally varying malaria reproduction numbers in a near elimination setting*, 2018.
-3. I. Routledge et al., *Tracking progress towards malaria elimination in China*, 2020.
+1. M. Shim et al., *Spatial variability in reproduction number and doubling time across two waves of the COVID-19 pandemic in South Korea, February to July, 2020*, 2020.
+2. M. Gomez-Rodriguez et al., *Uncovering the Temporal Dynamics of Diffusion Networks*, 2011.
+3. I. Routledge et al., *Estimating spatiotemporally varying malaria reproduction numbers in a near elimination setting*, 2018.
+4. I. Routledge et al., *Tracking progress towards malaria elimination in China*, 2020.
 
 ### Rationale
 
