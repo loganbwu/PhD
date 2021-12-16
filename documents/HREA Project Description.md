@@ -6,7 +6,7 @@
 
 Tracking the growth of an epidemic is an important part of infection management, control, and prevention. A common population-level metric for characterising growth is the effective reproduction number (R<sub>eff</sub>), or the average number of people who are infected by each case. When R<sub>eff</sub> is above 1, the epidemic is growing. When it is equal to 1 the epidemic is stable, and when it is below 1 the epidemic is shrinking. However, R<sub>eff</sub> is a population-level measure and cannot be disaggregated by sub-populations once calculated.
 
-This research will apply novel methods developed for malaria surveillance to the Victorian COVID-19 contact tracing database. These methods calculate estimates for the case-level reproduction number R<sub>c</sub>, which is a statistical estimate unique to each case. By assigning a metric to each COVID-19 case, these methods will allow operators to analyse epidemic growth by subregion (e.g., suburb) and over time, identifying potential hot-spots and populations.
+This research will apply novel computational methods developed for malaria surveillance to the Victorian COVID-19 contact tracing database. These methods calculate estimates for the case-level reproduction number R<sub>c</sub>, which is a statistical estimate unique to each case. By assigning a metric to each COVID-19 case, these methods will allow operators to analyse epidemic growth by subregion (e.g., suburb) and over time, identifying potential hot-spots and populations.
 
 ---
 
