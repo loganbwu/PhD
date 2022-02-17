@@ -8,6 +8,8 @@ Tracking the growth of an epidemic is an important part of infection management,
 
 This research will apply novel computational methods developed for malaria surveillance to the Victorian COVID-19 contact tracing database. These methods calculate estimates for the case-level reproduction number R<sub>c</sub>, which is a statistical estimate unique to each case. By assigning a metric to each COVID-19 case, these methods will allow operators to analyse epidemic growth by subregion (e.g., suburb) and over time, identifying potential hot-spots and populations. A byproduct of developing these methods will be the identification of important variables (e.g., location, genomic clustering to rule out transmission, symptom onset) that are necessary to main this ability in an operational setting.
 
+Victorian medical data is necessary for this research. In light of the sensitivity of the raw data as held by the Department of Health and recent ethics findings from the Victorian Ombudsman: (a) Logan Wu will work with the Department of Health to deidentify the dataset in a reproducible manner to mitigate privacy concerns, and (b) any ethical concerns that arise during the course of this research will be raised with the WEHI HREC.
+
 ---
 
 ## Project teams roles & responsibilities
@@ -30,10 +32,12 @@ Resources required for this research:
 
 - Linelist of all confirmed Victorian COVID-19 cases, including:
   - Case number, cryptographically hashed so it cannot be re-identified by anyone with access to the Department of Health's original COVID-19 database
-  - Residential address obfuscated by cryptographically 'salting' and 'hashing'; a simplified example is everyone at '1 Main Street' is assigned to 'Address A' instead and the lookup is discarded. LW can supply code to DH to do this so that LW does not receive the original address.
+  - Residential address, also obfuscated by hashing
   - Coordinates of SA1 (Australian Bureau of Statistics Statistical Area level 1) - these are similar to postcode but smaller.
   - Genomic cluster (hierarchical clustering)
-  - Medical information (e.g. age, calculated onset date, date notified, date symptomatic, date isolated where available)
+  - Medical information (e.g. age in 5 year bins, calculated onset date, date notified, date symptomatic, date isolated where available)
+
+**Note:** cryptographic hashing is a method of recoding values so the original value cannot be determined. A simplified version would be 'Address A' maps to 'ABC123' or CaseNumber 000001 maps to 'DEF456', in such a way that we can tell that two people at 'ABC123' lived together, but we do not know what their actual address is. LW can supply code to DH to do this so that LW does not receive the original address.
 
 - Case links
   - Source and target case numbers
@@ -165,7 +169,7 @@ Examples of measures we can use include AIC (the Akaike information criterion), 
 
 ### Plans for return of results of research to participants
 
-Results will not be returned to participants.
+Results will not be returned to participants due to the scale and no clinical benefit to individuals post-infection.
 
 ### Plans for dissemination and publication
 
