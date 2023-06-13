@@ -1,0 +1,144 @@
+---
+title: "Summary epicurve"
+output: html_notebook
+---
+
+- Summarise the time span and shape of the data
+
+```{r setup}
+library(sf)
+library(tidyverse)
+library(ggrepel)
+library(patchwork)
+library(readxl)
+library(geodata)
+library(rmapshaper)
+
+R_files = list.files("../R/functions", "\\.R$", recursive=TRUE, full.names=TRUE)
+for (file in R_files) { source(file) }
+
+GMS_COUNTRIES = c(China = "CHN",
+                  Thailand = "THA",
+                  Vietnam = "VNM",
+                  Myanmar = "MMR",
+                  Laos = "LAO",
+                  Cambodia = "KHM")
+
+proj.aus = "+proj=laea +lon_0=133.59375 +lat_0=-25.914326 +datum=WGS84 +units=m +no_defs"
+proj.chn = "+proj=aea +lon_0=105.46875 +lat_1=24.2463693 +lat_2=43.9872733 +lat_0=34.1168213 +datum=WGS84 +units=m +no_defs"
+```
+
+```{r data}
+borders = world(path=tempdir(), resolution = 4) %>%
+  st_as_sf() %>%
+  rename(name = NAME_0)
+
+thailand = borders %>%
+  filter(name == "Thailand")
+
+geojsons = list.files("../data/china", pattern = "\\.geojson$", full.names = T)
+adm0 = st_read(geojsons[[1]], quiet=TRUE) %>%
+  bind_rows(thailand)
+adm1 = st_read(geojsons[[2]], quiet=TRUE) %>%
+  filter(shapeName != "Taiwan Province")
+adm2 = st_read(geojsons[[3]], quiet=TRUE)
+adm3 = st_read(geojsons[[4]], quiet=TRUE)
+adm4 = tribble(
+  ~shapeName, ~x, ~y,
+  "Guantang Town", 115.436, 33.7827,
+  "Maoyang Town", 109.5075, 18.9383
+) %>% st_as_sf(coords=c("x", "y"), crs=4326)
+
+thailand = borders %>%
+  filter(name == "Thailand")
+tsy = st_read("../data/thailand/THA_AdminBoundaries_candidate.gdb.zip",
+              query = "SELECT admin2Name_en AS name,
+                                    Shape AS geometry
+                                    FROM tha_admbnda_adm2_rtsd_20220121
+                                    WHERE admin2Name_en = 'Tha Song Yang'",
+              quiet=TRUE) %>%
+  ms_simplify()
+aus_original = st_read("../data/australia/STE_2021_AUST_SHP_GDA2020/STE_2021_AUST_GDA2020.shp", quiet=T) %>%
+  st_set_crs(7844) %>%
+  ms_simplify(keep = 0.001)
+```
+
+```{r process_data}
+aus_reproj = {
+  .aus = aus_original %>%
+    st_transform(proj.aus)
+  st_crs(.aus) = proj.chn
+  .aus
+}
+
+
+adm1_filtered = adm1 %>%
+  filter(str_starts(shapeName, "Hainan|Yunnan|Henan")) %>%
+  mutate(shapeName = shapeName %>% str_remove(" .*")) %>%
+  bind_rows(thailand)
+adm1_bbox = lapply(seq_len(nrow(adm1_filtered)), function(i) {
+  st_bbox(adm1_filtered[i,])
+}) %>% setNames(adm1_filtered$shapeName)
+
+province_labels = adm1_filtered %>% st_centroid() %>% mutate(x=st_coordinates(.)[,1], y=st_coordinates(.)[,2])
+
+adm2_filtered = adm2 %>%
+  filter(str_starts(shapeName, "Wanning|Tengchong|Dengzhou|Yingjiang|Shangqiu")) %>%
+  mutate(shapeName = shapeName %>%
+           str_replace("shi$", " City") %>%
+           str_replace("xian$", " County")) %>%
+  bind_rows(tsy)
+
+adm3_filtered = adm3 %>%
+  filter(str_starts(shapeName, "Guantang"))
+
+adm0_bbox = st_bbox(adm0)
+adm1_bbox = st_bbox(adm1_filtered)
+```
+
+```{r aoi}
+ggplot() +
+  geom_sf(data = borders, color="white", fill="grey") +
+  # geom_sf(data = adm1, fill = "grey") +
+  geom_sf(data=aus_reproj, fill="#FF00FF", color="#FF00FF", linewidth=0.2, alpha=0) +
+  geom_sf(data=adm1_filtered, fill="#00FFFF", color="#00FFFF", linewidth=1, alpha=0.5) +
+  # geom_shadowtext(data = province_labels, aes(x=x, y=y, label=shapeName)) +
+  # geom_text_repel(data = province_labels, aes(x=x, y=y, label=shapeName),
+  #                 color = "white", bg.color = "black") +
+  coord_sf(xlim = c(adm0_bbox$xmin, adm0_bbox$xmax),
+           ylim = c(adm0_bbox$ymin, adm0_bbox$ymax)) +
+  theme_minimal() +
+  labs(x = NULL, y = NULL)
+
+ggsave("plots/areas_of_interest.png", width=6, height=4)
+```
+
+```{r aoi_mini}
+ggplot() +
+  geom_sf(data = borders, color="white") +
+  # geom_sf(data = adm1, fill = "grey") +
+  geom_sf(data=adm1_filtered, fill="pink", color="transparent") +
+  coord_sf(xlim = c(adm0_bbox$xmin, adm0_bbox$xmax),
+           ylim = c(adm0_bbox$ymin, adm0_bbox$ymax),
+           datum = NA) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.ticks.y = element_blank()) +
+  labs(x = NULL, y = NULL)
+ggsave("plots/areas_of_interest_mini.png", width=2, height=2)
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = borders, color="white") +
+  geom_sf(data=adm1_filtered, fill="pink", color="transparent") +
+  geom_sf(data=adm2_filtered, fill="#00FFFF", color="#00FFFF", linewidth=1, alpha=0.5) +
+  geom_sf(data=adm4, color="#00FFFF") +
+  coord_sf(xlim = c(adm1_bbox$xmin, adm1_bbox$xmax),
+           ylim = c(adm1_bbox$ymin, adm1_bbox$ymax)) +
+  theme_minimal() +
+  labs(x = NULL, y = NULL)
+ggsave("plots/sources.png", width=3, height=4)
+```

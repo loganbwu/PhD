@@ -1,2 +1,15 @@
 *.pdf
 ~$*
+.Rproj.user
+
+*.rds
+*.png
+*.pdf
+*.svg
+*.potx
+*.pptx
+*.xlsx
+data/
+documents/
+pdf/
+receipts/

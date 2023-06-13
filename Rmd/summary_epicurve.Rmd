@@ -1,0 +1,64 @@
+---
+title: "Summary epicurve"
+output: html_notebook
+---
+
+- Summarise the time span and shape of the data
+
+```{r setup}
+library(sf)
+library(tidyverse)
+library(ggrepel)
+library(patchwork)
+library(readxl)
+
+R_functions = list.files("../R/functions", "\\.R$", recursive=TRUE, full.names=TRUE)
+for (file in R_functions) { source(file) }
+```
+
+```{r data}
+load_functions = list(Dengzhou = load_dengzhou,
+                      Guantang = load_guantang,
+                      Thasongyang = load_thasongyang,
+                      Yingjiang = load_yingjiang,
+                      Deng = load_deng,
+                      Duchuan = load_duchuan,
+                      Shangqiu = load_shangqiu)
+data_list = lapply(load_functions, function(x) x(dir = ".."))
+# data_list = list(Dengzhou = load_dengzhou(dir = ".."),
+#                  Guantang = load_guantang(dir = ".."),
+#                  Thasongyang = load_thasongyang(dir = ".."),
+#                  Yingjiang = load_yingjiang(dir = ".."))
+data = bind_rows(data_list, .id="Region")
+
+data_ranges = data %>%
+  group_by(Region) %>%
+  summarise(Start = min(Date),
+            End = max(Date))
+```
+
+```{r}
+data_trends = lapply(data_list, function(d) {
+  decompose_data(d) %>%
+    filter(name == "trend")
+}) %>%
+  bind_rows(.id="Region")
+  
+ggplot(data_ranges) +
+  geom_rect(aes(xmin=min(data$Date), xmax=Start, ymin=-Inf, ymax=Inf),
+            fill = "white",
+            alpha = 0.5) +
+  geom_rect(aes(xmin=End, xmax=max(data$Date), ymin=-Inf, ymax=Inf),
+            fill = "white",
+            alpha = 0.5) +
+  geom_col(data=data, aes(x=Date, y=Cases)) +
+  geom_line(data=data_trends, aes(x=Date, y=value), linewidth=1, color="tomato", alpha=0.8) +
+  facet_wrap(vars(Region), ncol=2, scales="free_y") +
+  scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
+               minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
+               date_labels="%b\n%Y",
+               expand = c(0, 0)) +
+  labs(x = "Month",
+       y = "Monthly cases")
+ggsave("plots/epicurve_summary.png", width=8, height=4)
+```
