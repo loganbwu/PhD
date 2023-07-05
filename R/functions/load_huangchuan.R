@@ -1,8 +1,7 @@
 library(tidyverse)
 library(readxl)
 
-load_duchuan_towns = function(path = "data/china/Duchuan County Malaria 1980-2022.xlsx",
-                               dir = NULL) {
+load_huangchuan_towns = function(path, dir) {
   if (!is.null(dir)) {
     path = file.path(dir, path)
   }
@@ -22,7 +21,7 @@ load_duchuan_towns = function(path = "data/china/Duchuan County Malaria 1980-202
     pivot_longer(-c(Date, Township), values_to = "Cases") %>%
     separate(name, c("Species", "Infection")) %>%
     drop_na() %>%
-    group_by(Township, Date) %>%
+    group_by(Township, Species, Date) %>%
     summarise(Cases = sum(Cases),
               .groups = "drop") %>%
     mutate(logCases = log(Cases + 0.01))
@@ -30,13 +29,20 @@ load_duchuan_towns = function(path = "data/china/Duchuan County Malaria 1980-202
   data
 }
 
-load_duchuan = function(path = "data/china/Duchuan County Malaria 1980-2022.xlsx",
-                         dir = NULL) {
+load_huangchuan = function(path = "data/china/Huangchuan County Malaria 1980-2022.xlsx",
+                        dir = NULL,
+                        species = "all") {
+  species_all = species == "all"
   
-  data = load_duchuan_towns(path, dir) %>%
+  data = load_huangchuan_towns(path, dir)
+  dateseq = tibble(Date = seq(min(data$Date), max(data$Date), by="month"))
+  data = data %>%
+    filter((Species %in% species) | species_all) %>%
     group_by(Date) %>%
     summarise(Cases = sum(Cases)) %>%
-    mutate(logCases = log(Cases + 0.01))
+    right_join(dateseq, by="Date") %>%
+    mutate(Cases = replace_na(Cases, 0),
+           logCases = log(Cases + 0.01))
   
   data
 }

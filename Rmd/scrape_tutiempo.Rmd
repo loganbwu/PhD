@@ -1,0 +1,112 @@
+---
+title: "Scrape tutiempo.net"
+output: html_notebook
+---
+
+This RMarkdown notebook is for scraping weather data from en.tutiempo.net.
+
+```{r setup}
+library(tidyverse)
+library(RSelenium)
+library(rvest)
+library(lubridate)
+library(pbapply)
+library(memoise)
+R_files = list.files("../R/functions", "\\.R$", recursive=TRUE, full.names=TRUE)
+for (file in R_files) { source(file) }
+
+selection = "Tengchong"
+
+load_functions = list(Guantang = load_guantang,
+                      Yingjiang = load_yingjiang,
+                      Dengzhou = load_deng,
+                      Huangchuan = load_huangchuan,
+                      Shangqiu = load_shangqiu,
+                      Tengchong = load_tengchong)
+URIs = list(Tengchong = "ws-567390.html")
+
+base_url = "https://en.tutiempo.net/climate/"
+date_fmt = "%m-%Y"
+
+form_url = function(date, base_url="https://en.tutiempo.net/climate", uri="ws-567390.html") {
+  file.path(base_url, date, uri)
+}
+epi_data = load_functions[[selection]](dir="..")
+dates = seq(min(epi_data$Date), max(epi_data$Date), by="month") %>%
+  format(date_fmt) %>%
+  setNames({.})
+URLs = sapply(dates, form_url, uri=URIs[[selection]])[1:6]
+```
+
+```{r}
+.get_table_data = function(url) {
+  html = read_html(url)
+  table_data = html %>%
+    html_node("table.medias") %>%
+    html_table() %>%
+    filter(as.character(suppressWarnings(as.numeric(Day))) == Day) %>% # ensure row has a real Day, not a gap or total
+    mutate_all(\(...) suppressWarnings(as.numeric(...)))
+}
+mem = cache_filesystem("cache")
+get_table_data = memoise(.get_table_data, cache=mem)
+```
+
+```{r}
+tables = pblapply(urls, get_table_data)
+```
+
+```{r}
+weather = bind_rows(tables, .id="Month") %>%
+  mutate(Date = paste0(Day, "-", Month) %>% dmy()) %>%
+  select(Date, everything(), -Month, -Day) %>%
+  mutate(DayInYear = Date - ymd(paste0(year(Date), "01-01")) + 1)
+
+
+seasonal = weather %>%
+  group_by(DayInYear) %>%
+  # summarise(across(`T`:VM, \(x) mean(x, na.rm=T)))
+  summarise(average_mean = mean(`T`, na.rm=T),
+            average_max = mean(`TM`, na.rm=T),
+            average_min = mean(`Tm`, na.rm=T),
+            average_precip = mean(PP, na.rm=T))
+
+weather %>%
+  rename(Average = `T`,
+         Max = TM,
+         Min = Tm) %>%
+  pivot_longer(cols=c(Average, Max, Min)) %>%
+  drop_na(value) %>%
+  ggplot(aes(x=ymd("1999-12-31")+DayInYear, y=value, color=name, group=interaction(name, year(Date)))) +
+  geom_line() +
+  scale_x_date(date_labels="%b", date_breaks="month") +
+  labs(title=paste("Tengchong", min(weather$Date), "to", max(weather$Date)), x = "Month", y="deg Celsius")
+
+seasonal %>%
+  ggplot(aes(x=ymd("1999-12-31")+DayInYear, y=average_min)) +
+  geom_point() +
+  geom_point(aes(y=average_precip*max(seasonal$average_min,na.rm=T)/max(seasonal$average_precip, na.rm=T)), color="steelblue") +
+  scale_x_date(date_labels="%b", date_breaks="month") +
+  scale_y_continuous(sec.axis = sec_axis(~. *max(seasonal$average_precip, na.rm=T)/max(seasonal$average_min, na.rm=T),
+                                         name = "Precipitation (mm)")) +
+  theme(axis.ticks.y.right = element_line(color = "steelblue"),
+        axis.text.y.right = element_text(color = "steelblue"),
+        axis.title.y.right = element_text(color = "steelblue")) +
+  labs(title=paste("Tengchong", min(weather$Date), "to", max(weather$Date)), x = "Month", y="Temperature (C)")
+```
+
+Variable | Description
+----------------------
+T | Average Temperature (°C)
+TM | Maximum temperature (°C)
+Tm | Minimum temperature (°C)
+SLP | Atmospheric pressure at sea level (hPa)
+H | Average relative humidity (%)
+PP | Total rainfall and / or snowmelt (mm)
+VV | Average visibility (Km)
+V | Average wind speed (Km/h)
+VM | Maximum sustained wind speed (Km/h)
+VG | Maximum speed of wind (Km/h)
+RA | Indicate if there was rain or drizzle (In the monthly average, total days it rained)
+SN | Snow indicator (In the monthly average, total days that snowed)
+TS | Indicates whether there storm (In the monthly average, Total days with thunderstorm)
+FG | Indicates whether there was fog (In the monthly average, Total days with fog)

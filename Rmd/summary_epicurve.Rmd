@@ -17,19 +17,28 @@ for (file in R_functions) { source(file) }
 ```
 
 ```{r data}
-load_functions = list(Dengzhou = load_dengzhou,
-                      Guantang = load_guantang,
+load_functions = list(Guantang = load_guantang,
                       Thasongyang = load_thasongyang,
                       Yingjiang = load_yingjiang,
                       Deng = load_deng,
                       Duchuan = load_duchuan,
-                      Shangqiu = load_shangqiu)
+                      Shangqiu = load_shangqiu,
+                      Tengchong = load_tengchong)
+regions = tribble(~Region, ~State,
+                  "Guantang", "HEN",
+                  "Thasongyang", "THA",
+                  "Yingjiang", "YUN",
+                  "Deng", "HEN",
+                  "Duchuan", "HEN",
+                  "Shangqiu", "HEN",
+                  "Tengchong", "YUN") %>%
+  arrange(State, Region) %>%
+  mutate(State = fct_inorder(State),
+         Region = fct_inorder(Region))
 data_list = lapply(load_functions, function(x) x(dir = ".."))
-# data_list = list(Dengzhou = load_dengzhou(dir = ".."),
-#                  Guantang = load_guantang(dir = ".."),
-#                  Thasongyang = load_thasongyang(dir = ".."),
-#                  Yingjiang = load_yingjiang(dir = ".."))
-data = bind_rows(data_list, .id="Region")
+data = bind_rows(data_list, .id="Region") %>%
+  right_join(regions, by="Region") %>%
+  mutate(Region = paste0("[", State, "] ", Region))
 
 data_ranges = data %>%
   group_by(Region) %>%
@@ -39,26 +48,57 @@ data_ranges = data %>%
 
 ```{r}
 data_trends = lapply(data_list, function(d) {
-  decompose_data(d) %>%
+  timespan = max(year(d$Date)) - min(year(d$Date))
+  use_s.window = timespan > 20
+  if (use_s.window) {
+    decomp = decompose_data(d, 19)
+  } else {
+    decomp = decompose_data(d, "periodic")
+  }
+  
+  decomp %>%
     filter(name == "trend")
 }) %>%
-  bind_rows(.id="Region")
-  
+  bind_rows(.id="Region") %>%
+  right_join(regions, by="Region") %>%
+  mutate(Region = paste0("[", State, "] ", Region))
+
 ggplot(data_ranges) +
   geom_rect(aes(xmin=min(data$Date), xmax=Start, ymin=-Inf, ymax=Inf),
             fill = "white",
-            alpha = 0.5) +
+            alpha = 0.75) +
   geom_rect(aes(xmin=End, xmax=max(data$Date), ymin=-Inf, ymax=Inf),
             fill = "white",
-            alpha = 0.5) +
+            alpha = 0.75) +
   geom_col(data=data, aes(x=Date, y=Cases)) +
   geom_line(data=data_trends, aes(x=Date, y=value), linewidth=1, color="tomato", alpha=0.8) +
   facet_wrap(vars(Region), ncol=2, scales="free_y") +
+  # facet_grid(vars(Region), vars(State), scales="free_y") +
   scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
                minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
                date_labels="%b\n%Y",
                expand = c(0, 0)) +
   labs(x = "Month",
-       y = "Monthly cases")
+       y = "Monthly cases (trend)")
 ggsave("plots/epicurve_summary.png", width=8, height=4)
+
+ggplot(data_ranges) +
+  geom_rect(aes(xmin=min(data$Date), xmax=Start, ymin=1e-10, ymax=Inf),
+            fill = "white",
+            alpha = 0.75) +
+  geom_rect(aes(xmin=End, xmax=max(data$Date), ymin=1e-10, ymax=Inf),
+            fill = "white",
+            alpha = 0.75) +
+  # geom_col(data=data, aes(x=Date, y=Cases)) +
+  geom_line(data=data_trends %>% filter(value > 0.01), aes(x=Date, y=value), linewidth=1, color="tomato", alpha=0.8) +
+  facet_wrap(vars(Region), ncol=2, scales="free_y") +
+  scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
+               minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
+               date_labels="%b\n%Y",
+               expand = c(0, 0)) +
+  scale_y_log10(labels=label_auto) +
+  coord_cartesian(ylim=c(0.05, NA)) +
+  labs(x = "Month",
+       y = "Monthly cases (trend)")
+ggsave("plots/epicurve_summary_log10.png", width=8, height=4)
 ```
