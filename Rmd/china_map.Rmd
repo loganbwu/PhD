@@ -53,10 +53,17 @@ yingjiang = countiescities %>% filter(shapeName == "Yingjiangxian") %>% mutate(s
 huangchuan = countiescities %>% filter(shapeName == "Huangchuanxian") %>% mutate(shapeNameCN = "潢川县")
 dengzhou = countiescities %>% filter(shapeName == "Dengzhoushi") %>% mutate(shapeNameCN = "邓州市")
 shangqiu = countiescities %>% filter(shapeName == "Shangqiushi") %>% mutate(shapeNameCN = "商丘市")
+shangqiu_geom = st_union(shangqiu)
+shangqiu = shangqiu[1,]
+shangqiu$geometry = shangqiu_geom
 guantang = townships %>% filter(shapeName == "Guantangxiang")
-maoyang = townships %>% filter(shapeName == "Maoyangxiang")
+maoyang = townships %>% filter(shapeName == "Maoyangzhen")
 
-sites = bind_rows = bind_rows(wanning, tengchong, yingjiang, huangchuan, dengzhou, shangqiu, guantang, maoyang)
+sites = bind_rows(         huangchuan, dengzhou, shangqiu, guantang, tengchong, yingjiang, maoyang,  wanning) %>%
+  mutate(shapeProvince = c("Henan",    "Henan",  "Henan",  "Henan",  "Yunnan",  "Yunnan",  "Hainan", "Hainan"),
+         shortName = shapeName %>% str_remove("(shi|xian|xiang|zhen)$")) %>%
+  dplyr::select(shapeName, shortName, shapeProvince, shapeNameCN)
+st_write(sites, "../data/china/sites.geojson", delete_dsn=T)
 
 china_bbox = st_bbox(china)
 provinces_bbox = st_bbox(provinces_oi)
@@ -105,11 +112,12 @@ ggsave("plots/china_sites.png", width=6, height=4, scale=1)
 ```{r}
 # Process in order of centroids from north to south
 sites %>%
-  mutate(Latitude = st_coordinates(st_centroid(.))[,2]) %>%
+  mutate(Longitude = st_coordinates(st_centroid(.))[,1],
+         Latitude = st_coordinates(st_centroid(.))[,2]) %>%
   arrange(desc(Latitude)) %>%
   distinct(shapeName, .keep_all=TRUE) %>%
   mutate(shapeName = shapeName %>% str_remove("(shi|xiang|xian)$")) %>%
-  select(shapeName, Latitude) %>%
+  dplyr::select(shapeName, Longitude, Latitude) %>%
   st_drop_geometry() %>%
   as.data.frame() %>%
   dput()

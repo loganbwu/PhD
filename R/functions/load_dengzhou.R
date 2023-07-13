@@ -21,7 +21,7 @@ load_dengzhou_towns = function(path, dir) {
     pivot_longer(-c(Date, Township), values_to = "Cases") %>%
     separate(name, c("Species", "Infection")) %>%
     drop_na() %>%
-    group_by(Township, Species, Date) %>%
+    group_by(Township, Species, Infection, Date) %>%
     summarise(Cases = sum(Cases),
               .groups = "drop") %>%
     mutate(logCases = log(Cases + 0.01))

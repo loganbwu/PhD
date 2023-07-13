@@ -11,54 +11,41 @@ library(tidyverse)
 library(ggrepel)
 library(patchwork)
 library(readxl)
+library(MalariaData)
 
 R_functions = list.files("../R/functions", "\\.R$", recursive=TRUE, full.names=TRUE)
 for (file in R_functions) { source(file) }
 
-region_latitudes = tibble(shapeName = c("Shangqiu", "Guantang", "Dengzhou", 
-"Huangchuan", "Tengchong", "Yingjiang", "Wanning"), Latitude = c(34.436480491839, 
-33.7827, 32.6731496456045, 32.1255186891586, 25.2807208227478, 
-24.8634268750316, 18.7690241830824))
-
-load_functions = list(Guantang = load_guantang,
-                      Yingjiang = load_yingjiang,
-                      Dengzhou = load_deng,
-                      Huangchuan = load_huangchuan,
-                      Shangqiu = load_shangqiu,
-                      Tengchong = load_tengchong)
-regions = tribble(~Region, ~State,
-                  "Shangqiu", "HEN",
-                  "Guantang", "HEN",
-                  "Dengzhou", "HEN",
-                  "Huangchuan", "HEN",
-                  "Tengchong", "YUN",
-                  "Yingjiang", "YUN",
-                  "Wanning", "HAI") %>%
-  arrange(State, Region) %>%
-  mutate(State = fct_inorder(State),
-         Region = fct_relevel(Region, region_latitudes$shapeName))
+sites = st_read("../data/china/sites.geojson") %>%
+  mutate(Latitude = st_coordinates(st_centroid(.))[,2],
+         shapeProvince = fct_inorder(shapeProvince),
+         shapeName = fct_inorder(shapeName),
+         shortName = fct_inorder(shortName)) %>%
+  filter(shortName != "Maoyang", shortName != "Wanning")
 
 species = c("Vivax", "Falciparum") %>% setNames({.})
 ```
 
 ```{r data}
 species_list = lapply(species, function(s) {
-  data_list = lapply(load_functions, function(x) x(dir = "..", species=c(s, "Mixed")))
+  data_list = lapply(sites$shortName %>% setNames({.}), function(x) {
+    load_region(tolower(x), species=c(s, "Mixed"))
+  })
 })
 
 species_data = lapply(species_list, function(s) {
-  data = bind_rows(s, .id="Region") %>%
-    right_join(regions, by="Region") %>%
-    mutate(Tag = paste0("[", State, "] ", Region))
+  data = bind_rows(s, .id="shortName") %>%
+    right_join(sites, by="shortName") %>%
+    mutate(Tag = paste0("[", shapeProvince, "] ", shortName))
 })
 all_data = bind_rows(species_data, .id="Species") %>%
-  mutate(Region = Region %>% fct_relevel(region_latitudes$shapeName))
+  mutate(shortName = factor(shortName, levels=levels(sites$shortName)))
 
 data_ranges = bind_rows(species_data) %>%
-  group_by(Region) %>%
+  group_by(shortName) %>%
   summarise(Start = min(Date),
             End = max(Date)) %>%
-  mutate(Region = Region %>% fct_relevel(region_latitudes$shapeName))
+  mutate(shortName = factor(shortName, levels=levels(sites$shortName)))
 ```
 
 ```{r}
@@ -70,8 +57,7 @@ plot_cases = ggplot(data_ranges) +
             fill = "white",
             alpha = 0.75) +
   geom_line(data=all_data, aes(x=Date, y=Cases, color=Species), alpha=0.8) +
-  facet_wrap(vars(Region), ncol=1) +
-  # facet_grid(rows=vars(Region), cols=vars(Species)) +
+  facet_wrap(vars(shortName), ncol=1) +
   scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
                minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
                date_labels="%b\n%Y",
@@ -87,20 +73,12 @@ ggsave(paste0("plots/china_cases.svg"), width=6, height=6)
 ```{r}
 species_decomp = lapply(species_list, function(s) {
   data_trends = lapply(s, function(d) {
-    timespan = max(year(d$Date)) - min(year(d$Date))
-    use_s.window = timespan > 20
-    if (use_s.window) {
-      decomp = decompose_data(d, 19)
-    } else {
-      decomp = decompose_data(d, "periodic")
-    }
-    
-    decomp %>%
+    decompose_data(d) %>%
       pivot_wider(names_from=name)
   }) %>%
-    bind_rows(.id="Region") %>%
-    right_join(regions, by="Region") %>%
-    mutate(Tag = paste0("[", State, "] ", Region))
+    bind_rows(.id="shortName") %>%
+    right_join(sites, by="shortName") %>%
+    mutate(Tag = paste0("[", shapeProvince, "] ", shortName))
 })
 
 all_decomp = bind_rows(species_decomp, .id="Species")
@@ -115,7 +93,7 @@ plot_trend = ggplot(data_ranges) +
             fill = "white",
             alpha = 0.75) +
   geom_line(data=all_decomp, aes(x=Date, y=trend, color=Species), linewidth=1, alpha=0.8) +
-  facet_wrap(vars(Region), ncol=1) +
+  facet_wrap(vars(shortName), ncol=1) +
   # facet_grid(vars(Region), vars(State), scales="free_y") +
   scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
                minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
@@ -131,30 +109,29 @@ ggsave(paste0("plots/china_trend.svg"), width=6, height=6)
 ```
 
 ```{r}
-# seasonal_singleyear = all_decomp %>%
-#   group_by(Region) %>%
-#   distinct(Month, .keep_all=TRUE) %>%
-#   mutate(seasonal = seasonal / sum(seasonal),
-#          Region = fct_relevel(Region, region_latitudes$shapeName)) %>%
-#   left_join(region_latitudes, by=c("Region" = "shapeName"))
+# seasonal_weighted = lapply(species_decomp, function(decomp) {
+#   lapply(decomp, function(location) {
+#     total_cases = sum(location$Cases)
+#   })
+# })
 seasonal_weighted = all_decomp %>%
-  group_by(Region, Month) %>%
-  summarise(seasonal = sum(seasonal * Cases) / sum(Cases),
-            .groups = "drop_last") %>%
-  mutate(seasonal = seasonal / sum(seasonal)) %>%
-  left_join(region_latitudes, by=c("Region" = "shapeName"))
-# seasonal_labels = seasonal_singleyear %>%
-#   filter(Month == 12) %>%
-#   mutate(seasonal = seasonal+runif(n(), 0, 0.001))
-seasonal_labels = seasonal_weighted %>%
-  group_by(Region) %>%
-  arrange(desc(seasonal)) %>%
-  slice(1)
-ggplot(seasonal_weighted, aes(x=Month, y=seasonal, color=Latitude, group=Region)) +
+  select(Species, shapeName, shortName, Latitude, Month, Cases, seasonal) %>%
+  group_by(Species, shapeName, shortName, Latitude, Month) %>%
+  filter(sum(Cases) > 0) %>%
+  mutate(weight = ifelse(Cases == 0, 0, Cases / sum(Cases))) %>%
+  summarise(seasonal = sum(seasonal * weight),
+            .groups = "drop") %>%
+  group_by(Species, shapeName) %>%
+  mutate(seasonal = ifelse(seasonal==0, 0, seasonal / max(seasonal)))
+
+save(seasonal_weighted, file="../data/china/seasonal_weighted.rda")
+
+ggplot(seasonal_weighted, aes(x=Month, y=seasonal, color=shortName, group=shortName)) +
   geom_line(linewidth=1) +
-  geom_label_repel(data=seasonal_labels, aes(x=Month, label=Region),
-                  hjust=0, nudge_x=1, alpha=0.75) +
+  geom_label_repel(data=peak(seasonal_weighted, "seasonal"), aes(x=Month, label=shortName),
+                   hjust=0, nudge_x=1, alpha=0.75) +
   labs(y = "Case-weighted seasonal transmission multiplier") +
-  scale_x_continuous(breaks=1:12, labels=month.abb, minor_breaks=NULL)
+  scale_x_continuous(breaks=1:12, labels=month.abb, minor_breaks=NULL) +
+  facet_wrap(vars(Species), ncol=1)
 ggsave(paste0("plots/china_seasonal.svg"), width=6, height=4)
 ``` 

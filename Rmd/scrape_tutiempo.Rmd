@@ -5,6 +5,9 @@ output: html_notebook
 
 This RMarkdown notebook is for scraping weather data from en.tutiempo.net.
 
+Note: consider moving to this dataset instead:
+https://crudata.uea.ac.uk/cru/data/hrg/?_ga=2.86119323.20970249.1688623809-2016247340.1688623809
+
 ```{r setup}
 library(tidyverse)
 library(RSelenium)
@@ -12,18 +15,20 @@ library(rvest)
 library(lubridate)
 library(pbapply)
 library(memoise)
+library(MalariaData)
 R_files = list.files("../R/functions", "\\.R$", recursive=TRUE, full.names=TRUE)
 for (file in R_files) { source(file) }
 
-selection = "Tengchong"
+selection = "Shangqiu"
 
-load_functions = list(Guantang = load_guantang,
-                      Yingjiang = load_yingjiang,
-                      Dengzhou = load_deng,
-                      Huangchuan = load_huangchuan,
-                      Shangqiu = load_shangqiu,
-                      Tengchong = load_tengchong)
-URIs = list(Tengchong = "ws-567390.html")
+load_functions = list(Guantang = function(...) load_region("guantang", ...),
+                      Yingjiang = function(...) load_region("yingjiang", ...),
+                      Dengzhou = function(...) load_region("deng", ...),
+                      Huangchuan = function(...) load_region("huangchuan", ...),
+                      Shangqiu = function(...) load_region("shangqiu", ...),
+                      Tengchong = function(...) load_region("tengchong", ...))
+URIs = list(Tengchong = "ws-567390.html",
+            Shangqiu = "ws-580050.html")
 
 base_url = "https://en.tutiempo.net/climate/"
 date_fmt = "%m-%Y"
@@ -31,11 +36,11 @@ date_fmt = "%m-%Y"
 form_url = function(date, base_url="https://en.tutiempo.net/climate", uri="ws-567390.html") {
   file.path(base_url, date, uri)
 }
-epi_data = load_functions[[selection]](dir="..")
+epi_data = load_functions[[selection]]()
 dates = seq(min(epi_data$Date), max(epi_data$Date), by="month") %>%
   format(date_fmt) %>%
   setNames({.})
-URLs = sapply(dates, form_url, uri=URIs[[selection]])[1:6]
+URLs = sapply(dates, form_url, uri=URIs[[selection]])
 ```
 
 ```{r}
@@ -49,26 +54,36 @@ URLs = sapply(dates, form_url, uri=URIs[[selection]])[1:6]
 }
 mem = cache_filesystem("cache")
 get_table_data = memoise(.get_table_data, cache=mem)
+try_get_table_data = function(...) {
+  try(get_table_data(...))
+}
 ```
 
 ```{r}
-tables = pblapply(urls, get_table_data)
+tables = pblapply(URLs, try_get_table_data)
+table_success = sapply(names(tables), function(x) {
+  ifelse("try-error" %in% class(tables[[x]]), NA, x)
+}) %>% unname()
+table_success = table_success[!is.na(table_success)]
+tables_filt = tables[table_success]
 ```
 
 ```{r}
-weather = bind_rows(tables, .id="Month") %>%
+weather = bind_rows(tables_filt, .id="Month") %>%
   mutate(Date = paste0(Day, "-", Month) %>% dmy()) %>%
   select(Date, everything(), -Month, -Day) %>%
   mutate(DayInYear = Date - ymd(paste0(year(Date), "01-01")) + 1)
 
 
 seasonal = weather %>%
+  drop_na(`T`, TM, Tm) %>%
   group_by(DayInYear) %>%
   # summarise(across(`T`:VM, \(x) mean(x, na.rm=T)))
   summarise(average_mean = mean(`T`, na.rm=T),
             average_max = mean(`TM`, na.rm=T),
             average_min = mean(`Tm`, na.rm=T),
-            average_precip = mean(PP, na.rm=T))
+            average_precip = mean(PP, na.rm=T),
+            TEST = mean(`T`, na.rm=T))
 
 weather %>%
   rename(Average = `T`,
@@ -79,34 +94,35 @@ weather %>%
   ggplot(aes(x=ymd("1999-12-31")+DayInYear, y=value, color=name, group=interaction(name, year(Date)))) +
   geom_line() +
   scale_x_date(date_labels="%b", date_breaks="month") +
-  labs(title=paste("Tengchong", min(weather$Date), "to", max(weather$Date)), x = "Month", y="deg Celsius")
+  labs(title=paste(selection, min(weather$Date), "to", max(weather$Date)), x = "Month", y="deg Celsius")
 
 seasonal %>%
-  ggplot(aes(x=ymd("1999-12-31")+DayInYear, y=average_min)) +
+  ggplot(aes(x=ymd("1999-12-31")+DayInYear, y=average_mean)) +
   geom_point() +
-  geom_point(aes(y=average_precip*max(seasonal$average_min,na.rm=T)/max(seasonal$average_precip, na.rm=T)), color="steelblue") +
+  geom_point(aes(y=average_precip*max(seasonal$average_mean,na.rm=T)/max(seasonal$average_precip, na.rm=T)), color="steelblue") +
   scale_x_date(date_labels="%b", date_breaks="month") +
-  scale_y_continuous(sec.axis = sec_axis(~. *max(seasonal$average_precip, na.rm=T)/max(seasonal$average_min, na.rm=T),
+  scale_y_continuous(sec.axis = sec_axis(~. *max(seasonal$average_precip, na.rm=T)/max(seasonal$average_mean, na.rm=T),
                                          name = "Precipitation (mm)")) +
   theme(axis.ticks.y.right = element_line(color = "steelblue"),
         axis.text.y.right = element_text(color = "steelblue"),
         axis.title.y.right = element_text(color = "steelblue")) +
-  labs(title=paste("Tengchong", min(weather$Date), "to", max(weather$Date)), x = "Month", y="Temperature (C)")
+  labs(title=paste(selection, min(weather$Date), "to", max(weather$Date)), x = "Month", y="Average daily mean temperature (C)")
+ggsave(paste0("plots/", selection, "_climate.svg"), width=6, height=4)
 ```
 
 Variable | Description
-----------------------
-T | Average Temperature (°C)
-TM | Maximum temperature (°C)
-Tm | Minimum temperature (°C)
-SLP | Atmospheric pressure at sea level (hPa)
-H | Average relative humidity (%)
-PP | Total rainfall and / or snowmelt (mm)
-VV | Average visibility (Km)
-V | Average wind speed (Km/h)
-VM | Maximum sustained wind speed (Km/h)
-VG | Maximum speed of wind (Km/h)
-RA | Indicate if there was rain or drizzle (In the monthly average, total days it rained)
-SN | Snow indicator (In the monthly average, total days that snowed)
-TS | Indicates whether there storm (In the monthly average, Total days with thunderstorm)
-FG | Indicates whether there was fog (In the monthly average, Total days with fog)
+---------|------------
+       T | Average Temperature (°C)
+      TM | Maximum temperature (°C)
+      Tm | Minimum temperature (°C)
+     SLP | Atmospheric pressure at sea level (hPa)
+       H | Average relative humidity (%)
+      PP | Total rainfall and / or snowmelt (mm)
+      VV | Average visibility (Km)
+       V | Average wind speed (Km/h)
+      VM | Maximum sustained wind speed (Km/h)
+      VG | Maximum speed of wind (Km/h)
+      RA | Indicate if there was rain or drizzle (In the monthly average, total days it rained)
+      SN | Snow indicator (In the monthly average, total days that snowed)
+      TS | Indicates whether there storm (In the monthly average, Total days with thunderstorm)
+      FG | Indicates whether there was fog (In the monthly average, Total days with fog)
