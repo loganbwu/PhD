@@ -4,8 +4,7 @@ output: html_notebook
 ---
 
 ```{r setup}
-library(cruts)
-library(raster)
+library(terra)
 library(tidyverse)
 library(stars)
 library(ggrepel)
@@ -14,81 +13,142 @@ library(memoise)
 R_functions = list.files("../R/functions", "\\.R$", recursive=TRUE, full.names=TRUE)
 for (file in R_functions) { source(file) }
 
-tavg_dir = ".../data/wc2.1_2.5m_tavg"
-tmin_dir = ".../data/wc2.1_2.5m_tmin"
-tmax_dir = ".../data/wc2.1_2.5m_tmax"
-prec_dir = ".../data/wc2.1_2.5m_prec"
-bio_dir = ".../data/wc2.1_2.5m_bio"
-bio_names = c("Annual mean temperature", "Mean diurnal range", "Isothermality", "Temperature seasonality", "Max temperature of warmest month", "Min temperature of coldest month", "Temperature annual range", "Mean temperature of wettest quarter", "Mean temperature of driest quarter", "Mean temperature of the warmest quarter", "Mean temperature of the coldest quarter", "Annual precipitation", "Precipitation of wettest month", "Precipitation of driest month", "Precipitation seasonality", "Precipitation of wettest quarter", "Precipitation of driest quarter", "Precipitation of warmest quarter", "Precipitation of coldest quarter")
+tavg_dir = "../data/wc2.1_2.5m_tavg"
+tmin_dir = "../data/wc2.1_2.5m_tmin"
+tmax_dir = "../data/wc2.1_2.5m_tmax"
+prec_dir = "../data/wc2.1_2.5m_prec"
+# bio_dir = "../data/wc2.1_2.5m_bio"
+# bio_names = c("Annual mean temperature", "Mean diurnal range", "Isothermality", "Temperature seasonality", "Max temperature of warmest month", "Min temperature of coldest month", "Temperature annual range", "Mean temperature of wettest quarter", "Mean temperature of driest quarter", "Mean temperature of the warmest quarter", "Mean temperature of the coldest quarter", "Annual precipitation", "Precipitation of wettest month", "Precipitation of driest month", "Precipitation seasonality", "Precipitation of wettest quarter", "Precipitation of driest quarter", "Precipitation of warmest quarter", "Precipitation of coldest quarter")
 
-.read_worldclim = function(dir) {
+read_worldclim = function(dir) {
   tifs = list.files(dir, "\\.tif$", full.names=T)
   tifs_num = as.integer(str_extract(tifs, "[0-9]+(?=\\.tif$)"))
   raw = do.call(c, lapply(tifs[order(tifs_num)], read_stars))
   names(raw) = names(raw) %>% str_extract("[^_]+_[0-9]+(?=\\.tif$)")
   raw
 }
-read_worldclim = memoise(.read_worldclim)
-
-extract_layers = function(layers, geom, names_to="layer") {
-  var_name = names(layers[1]) %>% str_extract("[^_]+(?=_)")
-  raw_values = st_extract(layers, geom) %>%
-    st_drop_geometry() %>%
-    as_tibble() %>%
-    select(-geometry) %>%
-    t() %>%
-    as_tibble() %>%
-    mutate(!!names_to := row_number(), .before=1) %>%
-    pivot_longer(-!!names_to, names_to="V", values_to=var_name)
-  geom_details = geom %>% mutate(V=paste0("V", row_number()))
-  geom_details %>%
-    st_drop_geometry() %>%
-    right_join(raw_values, by="V") %>%
-    dplyr::select(-V)
+read_worldclim_raster = function(dir) {
+  tifs = list.files(dir, "\\.tif$", full.names=T)
+  tifs_num = as.integer(str_extract(tifs, "[0-9]+(?=\\.tif$)"))
+  raw = raster::stack(tifs[order(tifs_num)])
+  names(raw) = names(raw) %>% str_extract("[^_]+_[0-9]+$")
+  raw
 }
+read_worldclim_terra = function(dir) {
+  tifs = list.files(dir, "\\.tif$", full.names=T)
+  tifs_num = as.integer(str_extract(tifs, "[0-9]+(?=\\.tif$)"))
+  raw = terra::rast(tifs[order(tifs_num)])
+  names(raw) = names(raw) %>% str_extract("[^_]+_[0-9]+$")
+  raw
+}
+
+
+extract_layers = function(layers, geom, names_to="layer", use_area_weighted_quantiles=TRUE) {
+  if (use_area_weighted_quantiles & !"RasterStack" %in% class(layers)) {
+    stop("Area-weighted quantiles requires `layers` to be a `RasterStack` object.")
+  }
+  var_name = names(layers)[1] %>% str_extract("[^_]+(?=_)")
+  var_names = paste(var_name, c("mean", "LQ", "UQ"), sep="_")
+  
+  fns = list(mean, function(x) { quantile(x, 0.25) }, function(x) { quantile(x, 0.75) }) %>%
+    setNames(var_names)
+  if (use_area_weighted_quantiles) {
+    # list col version with one value in the vector per cell covered
+    raw_values = lapply(fns, function(f) raster::extract(layers, geom))
+    processed_values = lapply(seq_along(raw_values) %>% setNames(names(raw_values)), function(i) {
+      x = raw_values[[i]] %>% setNames(paste0("V", seq_along({.})))
+      column = lapply(seq_along(x), function(j) {
+        y = x[[j]]
+        colnames(y) = seq_len(dim(y)[2])
+        v = y %>%
+          as_tibble() %>%
+          pivot_longer(everything(), names_to=names_to) %>%
+          mutate(V = paste0("V", j),
+                 !!names_to  := as.numeric(!!rlang::sym(names_to)),
+                 .before=1)
+      }) %>%
+        bind_rows()
+    }) %>%
+      bind_rows(.id = "var") %>%
+      pivot_wider(names_from = var, values_fn = list)
+  } else {
+    # single value per geometry
+    raw_values = lapply(fns, function(f) st_extract(layers, geom, FUN=f))
+    processed_values = lapply(seq_along(raw_values), function(i) {
+      x = raw_values[[i]] %>% st_drop_geometry() %>%
+        as_tibble() %>%
+        select(-geometry) %>%
+        t() %>%
+        as_tibble() %>%
+        mutate(!!names_to := row_number(), .before=1) %>%
+        pivot_longer(-!!names_to, names_to="V", values_to=var_names[[i]])
+      if (i > 1) {
+        x = x %>% select(!!var_names[[i]])
+      }
+      x
+    }) %>%
+      bind_cols()
+  }
+  
+  # Add original geometry information
+  geom %>%
+    st_drop_geometry() %>%
+    mutate(V = paste0("V", row_number())) %>%
+    right_join(processed_values, by="V") %>%
+    dplyr::select(-V) -> xx
+}
+```
+
+```{r load_data}
+load("../data/china/seasonal_weighted.rda")
 
 sites = st_read("../data/china/sites.geojson") %>%
   mutate(Latitude = st_coordinates(st_centroid(.))[,2],
          shapeProvince = fct_inorder(shapeProvince),
          shapeName = fct_inorder(shapeName),
-         shortName = fct_inorder(shortName))
+         shapeName = fct_inorder(shapeName))
 
-tavg = read_worldclim(tavg_dir)
+# tavg = read_worldclim_raster(tavg_dir)
+tavg = read_worldclim_raster("../data/wc2.1_30s_tavg_crop")
 tmin = read_worldclim(tmin_dir)
 tmax = read_worldclim(tmax_dir)
 prec = read_worldclim(prec_dir)
-bio = read_worldclim(bio_dir)
+# bio = read_worldclim(bio_dir)
 ```
 
 Data from https://worldclim.org/data/worldclim21.html
 
 ```{r}
 tavg_sites = extract_layers(tavg, sites, "month")
-tmin_sites = extract_layers(tmin, sites, "month")
-tmax_sites = extract_layers(tmax, sites, "month")
+tmin_sites = extract_layers(tmin, sites, "month", use_area_weighted_quantiles = FALSE)
+tmax_sites = extract_layers(tmax, sites, "month", use_area_weighted_quantiles = FALSE)
 temp_sites = tmin_sites %>%
   full_join(tavg_sites) %>%
   full_join(tmax_sites)
 
-prec_sites = extract_layers(prec, sites, "month")
-bio_sites = extract_layers(bio, sites) %>%
-  mutate(layer = bio_names[layer])
+prec_sites = extract_layers(prec, sites, "month", use_area_weighted_quantiles = FALSE)
+# bio_sites = extract_layers(bio, sites) %>%
+#   mutate(layer = bio_names[layer])
 ```
 
 ```{r}
-p_temp = temp_sites %>%
-  ggplot(aes(x=month, y=tavg, color=Latitude, group=shapeName)) +
+temp_sites.2 = temp_sites
+temp_sites.2$tavg_mean = sapply(temp_sites.2$tavg_mean, mean)
+temp_sites.2$tavg_LQ = sapply(temp_sites.2$tavg_LQ, mean)
+temp_sites.2$tavg_UQ = sapply(temp_sites.2$tavg_UQ, mean)
+p_temp = temp_sites.2 %>%
+  ggplot(aes(x=month, y=tavg_mean, color=Latitude, group=shapeName)) +
   geom_line() +
-  geom_label_repel(data=peak(temp_sites, "tavg"), aes(x=month, y=tavg, label=shortName),
+  geom_label_repel(data=peak(temp_sites.2, "tavg_mean"), aes(x=month, y=tavg_mean, label=shapeName),
                    size=3, label.padding=unit(0.1, "lines"), hjust=0, nudge_x=1, alpha=0.75,
                    direction="y") +
   facet_wrap(vars(shapeProvince)) +
   scale_x_continuous(breaks=1:12, labels=substr(month.abb, 0, 1), minor_breaks=NULL)
 
 p_prec = prec_sites %>%
-  ggplot(aes(x=month, y=prec, color=Latitude, group=shapeName)) +
+  ggplot(aes(x=month, y=prec_mean, color=Latitude, group=shapeName)) +
   geom_line() +
-  geom_label_repel(data=peak(prec_sites, "prec"), aes(x=month, y=prec, label=shortName),
+  geom_label_repel(data=peak(prec_sites, "prec_mean"), aes(x=month, y=prec_mean, label=shapeName),
                    size=3, label.padding=unit(0.1, "lines"), hjust=0, nudge_x=1, alpha=0.75,
                    direction="y") +
   facet_wrap(vars(shapeProvince)) +
@@ -148,7 +208,7 @@ R0 = function(t) {
     )
   })
 }
-R0_quad = function(tmin, tmax) {
+R0_unif = function(tmin, tmax) {
   # Uniform quadrature
   mapply(function(.tmin, .tmax) {
     range = .tmax - .tmin
@@ -157,6 +217,9 @@ R0_quad = function(tmin, tmax) {
     t = seq(center - range*spread_multiplier/2, center + range*spread_multiplier/2, length.out=100)
     mean(R0(t))
   }, tmin, tmax)
+}
+R0_quad = function(t) {
+    mean(R0(t))
 }
 
 tt = seq(10, 40, length.out=10000)
@@ -179,37 +242,44 @@ ggplot(relationship_results, aes(x=temperature, y=value)) +
 Apply R0 function to areas
 
 ```{r}
-load("../data/china/seasonal_weighted.rda")
+temp_sites$tavg_mean_mean = sapply(temp_sites$tavg_mean, mean)
+temp_sites$R0_quad = sapply(temp_sites$tavg_mean, function(t) {mean(R0(t))})
+temp_sites$R0_avg = sapply(temp_sites$tavg_mean, function(t) {R0(mean(t))})
+temp_sites = as_tibble(temp_sites)
+
+save(temp_sites, file="../data/china/temp_sites.rda")
+
 plot_data = temp_sites %>%
-  mutate(R0_quad = R0_quad(tmin, tmax),
-         R0_avg = R0(tavg)) %>%
+  # select(-tavg_mean, -tavg_LQ, -tavg_UQ)# %>%
   full_join(seasonal_weighted %>% st_drop_geometry() %>% pivot_wider(names_from=Species, values_from=seasonal),
-            by=c("shortName", "month"="Month")) %>%
-  # rename(`R0(T)` = R0) %>%
-  group_by(shortName) %>%
-  mutate(tavg = tavg / max(tavg),
+            by=c("shapeName", "month"="Month")) %>%
+  # rename(shapeName = shapeName.x) %>%
+  group_by(shapeName) %>%
+  mutate(tavg = tavg_mean_mean / max(tavg_mean_mean),
          R0_quad = R0_quad / max(c(R0_quad)),
          R0_avg = R0_avg / max(c(R0_avg))) %>%
   pivot_longer(c(R0_quad, R0_avg, Falciparum, Vivax, tavg)) %>%
-  mutate(shortName = factor(shortName, levels=levels(sites$shortName)),
+  mutate(shapeName = factor(shapeName, levels=levels(sites$shapeName)),
          name = fct_relevel(name, "tavg", "Falciparum", "Vivax", "R0_quad", "R0_avg"))
 
 ggplot(plot_data %>% filter(name != "Falciparum", name != "Vivax"),
        aes(x=month, y=value, color=name)) +
   geom_line() +
   geom_point(data=plot_data %>% filter(name %in% c("Falciparum", "Vivax"))) +
-  facet_wrap(vars(shapeProvince, shortName)) +
+  facet_wrap(vars(shapeProvince, shapeName)) +
   scale_x_continuous(breaks=1:12, labels=substr(month.abb, 0, 1), minor_breaks=NULL) +
   scale_y_continuous(breaks=0:1, labels=c(0, "Max")) +
   scale_color_manual(values=c("tavg"="tomato", "Falciparum"="darkgrey", "Vivax"="black", "R0_quad"="navy", "R0_avg"="limegreen")) +
   labs(x=NULL, y = NULL) +
-  theme(panel.background=)
+  theme_minimal() +
+  theme(plot.background=element_rect(fill="white"))
+ggsave("plots/r0_comparison.png", width=8, height=6)
 ```
 
 ```{r}
 selection = "Guantang"
 temp_selection = temp_sites %>%
-  filter(shortName == selection)
+  filter(shapeName == selection)
 relationship_grid = lapply(c(relationships, list(R0=R0)), function(f) {
   factor_grid = expand_grid(month = seq_along(month.name),
                             tavg = seq(0, 40, length.out=100)) %>%
@@ -225,12 +295,40 @@ relationship_grid = lapply(c(relationships, list(R0=R0)), function(f) {
 
 ggplot(relationship_grid, aes(x=month, y=tavg, fill=value)) +
   geom_raster() +
-  geom_ribbon(data=temp_selection, aes(ymin=tmin, ymax=tmax), fill="white", alpha=0.25) +
-  geom_line(data=temp_selection, aes(y=tavg, fill=NULL), color="white") +
-  scale_x_continuous(breaks=1:12, labels=substr(month.abb, 0, 1), minor_breaks=NULL) +
+  geom_ribbon(data=temp_selection, aes(ymin=tmin_mean , ymax=tmax_mean, y=NULL), fill="white", alpha=0.25) +
+  geom_line(data=temp_selection, aes(y=tavg_mean_mean, fill=NULL), color="white") +
+  scale_x_continuous(breaks=1:12, labels=substr(month.abb, 0, 1), minor_breaks=NULL, expand=c(0,0)) +
+  scale_y_continuous(expand=c(0,0)) +
+  coord_cartesian(ylim=c(0, NA)) +
   scale_fill_gradient(low="black", high="tomato", breaks=0:1, labels=c("0", "Max")) +
   facet_wrap(vars(desc)) +
-  labs(title = paste0(temp_selection$shortName[1], ", ", temp_selection$shapeProvince[1], " contributing factor ranges"),
+  labs(title = paste0(temp_selection$shapeName[1], ", ", temp_selection$shapeProvince[1], " contributing factor ranges"),
+       subtitle = "Band showing average daily minimums and maximums",
        x = NULL,
        y = "T avg (C)")
+
+ggsave(paste0("plots/contributing_factors_", str_to_lower(selection), ".png"), width=8, height=6)
+```
+
+```{r}
+# Investigate spatial heterogeneity in a region
+selection_geom = sites %>%
+  filter(shapeName == selection)
+selection_tavg = raster::crop(tavg, st_buffer(selection_geom, 10e3))
+names(selection_tavg) = paste("tavg", month.abb)
+selection_R0 = raster::calc(selection_tavg, R0)
+names(selection_R0) = paste("R0", month.abb)
+
+library(tmap)
+m1 = tm_shape(selection_tavg) +
+  tm_raster(palette="plasma") +
+  tm_shape(selection_geom) +
+  tm_borders()
+tmap_save(m1, paste0("plots/map_tavg_", str_to_lower(selection), ".png"))
+
+m2 = tm_shape(selection_R0) +
+  tm_raster(palette="plasma") +
+  tm_shape(selection_geom) +
+  tm_borders()
+tmap_save(m2, paste0("plots/map_R0_", str_to_lower(selection), ".png"))
 ```

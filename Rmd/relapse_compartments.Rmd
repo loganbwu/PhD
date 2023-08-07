@@ -1,0 +1,60 @@
+---
+title: "Relapse duration"
+output: html_notebook
+---
+
+Investigate what ODE structure would be required for a delayed relapse.
+
+```{r setup}
+library(tidyverse)
+library(readxl)
+```
+
+```{r}
+relapse = read_excel("../data/china/Guantang Relapse Data - GJY.xlsx", "Relapse", skip=1) %>%
+  mutate_all(as.character) %>%
+  pivot_longer(cols=matches("relapse"), names_to="event", values_to="delay") %>%
+  mutate(delay = as.numeric(delay))
+
+ggplot(relapse, aes(x=delay, fill=event)) +
+  geom_histogram(binwidth=30) +
+  facet_wrap(vars(event), ncol=1)
+
+sample_1st = relapse %>%
+  filter(event == "1st relapse",
+         delay > 100) %>%
+  pull(delay)
+sample_mean = mean(sample_1st)
+sample_var = var(sample_1st)
+
+```
+
+m = a/b
+v = a/b^2
+v = m/b
+b = m/v
+a = m*b
+a = m^2/v
+
+
+```{r}
+# shape = 50 # number of compartments
+shape = sample_mean^2 / sample_var
+# rate = 1/2 # rate = 1 / mean time spent in each compartment
+rate = sample_mean / sample_var
+
+
+time = seq(0, 365*2, length.out=1000)
+tibble(time=time,
+       density = dgamma(time, round(shape), rate)) %>%
+  ggplot(aes(x=time, y=density)) +
+  geom_line()
+
+# n = 1000
+# samples = tibble(t1 = rgamma(n, shape, rate),
+#                  t2 = rexp(n, 1/10),
+#                  t = t1 + t2)
+# ggplot(samples, aes(x=t)) +
+#   geom_density()
+```
+

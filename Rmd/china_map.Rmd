@@ -24,45 +24,43 @@ for (file in R_files) { source(file) }
 borders = world(path=tempdir(), resolution = 4) %>%
   st_as_sf() %>%
   rename(name = NAME_0)
-
-geojsons = list.files("../data/china", pattern = "\\.geojson$", full.names = T)
-china = borders %>%
-  filter(name == "China") %>%
-  rename(shapeName = name)
-provinces = st_read(geojsons[[2]], quiet=TRUE) %>%
-  filter(shapeName != "Taiwan Province")
-countiescities = st_read(geojsons[[3]], quiet=TRUE)
-adm3 = st_read(geojsons[[4]], quiet=TRUE)
-townships = tribble(
-  ~shapeName, ~shapeNameCN, ~x, ~y,
-  "Guantangxiang", "观堂乡", 115.436, 33.7827,
-  "Maoyangzhen", "毛阳镇", 109.5075, 18.9383
-) %>% st_as_sf(coords=c("x", "y"), crs=4326)
+level0 = st_read("../data/china/gadm41_CHN_0.json", quiet=TRUE) %>%
+  mutate(shapeName = COUNTRY)
+level1 = st_read("../data/china/gadm41_CHN_1.json", quiet=TRUE) %>%
+  mutate(shapeName = NAME_1, shapeNameCN=NL_NAME_1)
+level2 = st_read("../data/china/gadm41_CHN_2.json", quiet=TRUE) %>%
+  mutate(shapeName = NAME_2, shapeNameCN = NL_NAME_2)
+level3 = st_read("../data/china/gadm41_CHN_3.json", quiet=TRUE) %>%
+  mutate(shapeName = NAME_3, shapeNameCN = NL_NAME_3)
+# townships = tribble(
+#   ~shapeName, ~shapeNameCN, ~x, ~y,
+#   "Guantangxiang", "观堂乡", 115.436, 33.7827,
+#   "Maoyangzhen", "毛阳镇", 109.5075, 18.9383
+# ) %>% st_as_sf(coords=c("x", "y"), crs=4326)
 ```
 
 ```{r process_data}
-hainan = provinces %>% filter(shapeName == "Hainan Province") %>% mutate(shapeNameCN = "海南")
-yunnan = provinces %>% filter(shapeName == "Yunnan Province") %>% mutate(shapeNameCN = "云南")
-henan = provinces %>% filter(shapeName == "Henan Province") %>% mutate(shapeNameCN = "河南")
+china = level0
+
+hainan = level1 %>% filter(shapeName == "Hainan")
+yunnan = level1 %>% filter(shapeName == "Yunnan")
+henan = level1 %>% filter(shapeName == "Henan")
 
 provinces_oi = bind_rows(hainan, yunnan, henan)
 
-wanning = countiescities %>% filter(shapeName == "Wanningshi") %>% mutate(shapeNameCN = "万宁市")
-tengchong = countiescities %>% filter(shapeName == "Tengchongxian") %>% mutate(shapeNameCN = "腾冲县")
-yingjiang = countiescities %>% filter(shapeName == "Yingjiangxian") %>% mutate(shapeNameCN = "盈江县")
-huangchuan = countiescities %>% filter(shapeName == "Huangchuanxian") %>% mutate(shapeNameCN = "潢川县")
-dengzhou = countiescities %>% filter(shapeName == "Dengzhoushi") %>% mutate(shapeNameCN = "邓州市")
-shangqiu = countiescities %>% filter(shapeName == "Shangqiushi") %>% mutate(shapeNameCN = "商丘市")
-shangqiu_geom = st_union(shangqiu)
-shangqiu = shangqiu[1,]
-shangqiu$geometry = shangqiu_geom
-guantang = townships %>% filter(shapeName == "Guantangxiang")
-maoyang = townships %>% filter(shapeName == "Maoyangzhen")
+wanning = level3 %>% filter(shapeName == "Wanning")
+tengchong = level3 %>% filter(shapeName == "Tengchong")
+yingjiang = level3 %>% filter(shapeName == "Yingjiang")
+huangchuan = level3 %>% filter(shapeName == "Huangchuan")
+dengzhou = level3 %>% filter(shapeName == "Deng") %>% mutate(shapeName = "Dengzhou")
+shangqiu = level2 %>% filter(shapeName == "Shangqiu")
+
+# guantang = townships %>% filter(shapeName == "Guantangxiang")
+guantang = level3 %>% filter(shapeName == "Luyi") %>% mutate(shapeName = "Guantang")
+maoyang = level3 %>% filter(shapeName == "BaotingLi") %>% mutate(shapeName = "Maoyang")
 
 sites = bind_rows(         huangchuan, dengzhou, shangqiu, guantang, tengchong, yingjiang, maoyang,  wanning) %>%
-  mutate(shapeProvince = c("Henan",    "Henan",  "Henan",  "Henan",  "Yunnan",  "Yunnan",  "Hainan", "Hainan"),
-         shortName = shapeName %>% str_remove("(shi|xian|xiang|zhen)$")) %>%
-  dplyr::select(shapeName, shortName, shapeProvince, shapeNameCN)
+  dplyr::select(shapeName, shapeProvince=NAME_1, shapeNameCN)
 st_write(sites, "../data/china/sites.geojson", delete_dsn=T)
 
 china_bbox = st_bbox(china)
@@ -73,7 +71,7 @@ sites_bbox = st_bbox(sites)
 ```{r aoi}
 ggplot() +
   geom_sf(data = borders, color="grey", fill="grey") +
-  geom_sf(data = provinces, color="white", fill="grey") +
+  geom_sf(data = level1, color="white", fill="grey") +
   # geom_sf(data=china, color="black", fill="transparent", linewidth=0.5) +
   geom_sf(data=provinces_oi, fill="#00FFFF", color="#00FFFF", linewidth=1, alpha=0.5) +
   geom_sf_text(data=provinces_oi, aes(label=paste(shapeNameCN, str_remove(shapeName, " Province")))) +
@@ -90,7 +88,7 @@ ggsave("plots/china_areas_of_interest.png", width=6, height=4, scale=0.5)
 ```{r}
 ggplot() +
   geom_sf(data = borders, color="grey", fill="grey") +
-  geom_sf(data = provinces, color="white", fill="grey") +
+  geom_sf(data = level1, color="white", fill="grey") +
   # geom_sf(data=china, color="white", fill="transparent", linewidth=0.5) +
   geom_sf(data=provinces_oi, fill="pink", color="white", alpha=1) +
   geom_sf(data=sites, fill="#00FFFF", color="#00FFFF", linewidth=0.25, alpha=0.5) +
@@ -111,14 +109,14 @@ ggsave("plots/china_sites.png", width=6, height=4, scale=1)
 
 ```{r}
 # Process in order of centroids from north to south
-sites %>%
-  mutate(Longitude = st_coordinates(st_centroid(.))[,1],
-         Latitude = st_coordinates(st_centroid(.))[,2]) %>%
-  arrange(desc(Latitude)) %>%
-  distinct(shapeName, .keep_all=TRUE) %>%
-  mutate(shapeName = shapeName %>% str_remove("(shi|xiang|xian)$")) %>%
-  dplyr::select(shapeName, Longitude, Latitude) %>%
-  st_drop_geometry() %>%
-  as.data.frame() %>%
-  dput()
+# sites %>%
+#   mutate(Longitude = st_coordinates(st_centroid(.))[,1],
+#          Latitude = st_coordinates(st_centroid(.))[,2]) %>%
+#   arrange(desc(Latitude)) %>%
+#   distinct(shapeName, .keep_all=TRUE) %>%
+#   mutate(shapeName = shapeName %>% str_remove("(shi|xiang|xian)$")) %>%
+#   dplyr::select(shapeName, Longitude, Latitude) %>%
+#   st_drop_geometry() %>%
+#   as.data.frame() %>%
+#   dput()
 ```

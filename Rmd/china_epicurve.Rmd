@@ -19,33 +19,32 @@ for (file in R_functions) { source(file) }
 sites = st_read("../data/china/sites.geojson") %>%
   mutate(Latitude = st_coordinates(st_centroid(.))[,2],
          shapeProvince = fct_inorder(shapeProvince),
-         shapeName = fct_inorder(shapeName),
-         shortName = fct_inorder(shortName)) %>%
-  filter(shortName != "Maoyang", shortName != "Wanning")
+         shapeName = fct_inorder(shapeName)) %>%
+  filter(shapeName != "Maoyang", shapeName != "Wanning")
 
 species = c("Vivax", "Falciparum") %>% setNames({.})
 ```
 
 ```{r data}
 species_list = lapply(species, function(s) {
-  data_list = lapply(sites$shortName %>% setNames({.}), function(x) {
+  data_list = lapply(sites$shapeName %>% setNames({.}), function(x) {
     load_region(tolower(x), species=c(s, "Mixed"))
   })
 })
 
 species_data = lapply(species_list, function(s) {
-  data = bind_rows(s, .id="shortName") %>%
-    right_join(sites, by="shortName") %>%
-    mutate(Tag = paste0("[", shapeProvince, "] ", shortName))
+  data = bind_rows(s, .id="shapeName") %>%
+    right_join(sites, by="shapeName") %>%
+    mutate(Tag = paste0("[", shapeProvince, "] ", shapeName))
 })
 all_data = bind_rows(species_data, .id="Species") %>%
-  mutate(shortName = factor(shortName, levels=levels(sites$shortName)))
+  mutate(shapeName = factor(shapeName, levels=levels(sites$shapeName)))
 
 data_ranges = bind_rows(species_data) %>%
-  group_by(shortName) %>%
+  group_by(shapeName) %>%
   summarise(Start = min(Date),
             End = max(Date)) %>%
-  mutate(shortName = factor(shortName, levels=levels(sites$shortName)))
+  mutate(shapeName = factor(shapeName, levels=levels(sites$shapeName)))
 ```
 
 ```{r}
@@ -57,7 +56,7 @@ plot_cases = ggplot(data_ranges) +
             fill = "white",
             alpha = 0.75) +
   geom_line(data=all_data, aes(x=Date, y=Cases, color=Species), alpha=0.8) +
-  facet_wrap(vars(shortName), ncol=1) +
+  facet_wrap(vars(shapeName), ncol=1) +
   scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
                minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
                date_labels="%b\n%Y",
@@ -76,9 +75,9 @@ species_decomp = lapply(species_list, function(s) {
     decompose_data(d) %>%
       pivot_wider(names_from=name)
   }) %>%
-    bind_rows(.id="shortName") %>%
-    right_join(sites, by="shortName") %>%
-    mutate(Tag = paste0("[", shapeProvince, "] ", shortName))
+    bind_rows(.id="shapeName") %>%
+    right_join(sites, by="shapeName") %>%
+    mutate(Tag = paste0("[", shapeProvince, "] ", shapeName))
 })
 
 all_decomp = bind_rows(species_decomp, .id="Species")
@@ -93,7 +92,7 @@ plot_trend = ggplot(data_ranges) +
             fill = "white",
             alpha = 0.75) +
   geom_line(data=all_decomp, aes(x=Date, y=trend, color=Species), linewidth=1, alpha=0.8) +
-  facet_wrap(vars(shortName), ncol=1) +
+  facet_wrap(vars(shapeName), ncol=1) +
   # facet_grid(vars(Region), vars(State), scales="free_y") +
   scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
                minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
@@ -115,9 +114,9 @@ ggsave(paste0("plots/china_trend.svg"), width=6, height=6)
 #   })
 # })
 seasonal_weighted = all_decomp %>%
-  select(Species, shapeName, shortName, Latitude, Month, Cases, seasonal) %>%
-  group_by(Species, shapeName, shortName, Latitude, Month) %>%
-  filter(sum(Cases) > 0) %>%
+  select(Species, shapeName, Latitude, Month, Cases, seasonal) %>%
+  group_by(Species, shapeName, Latitude, Month) %>%
+  # filter(sum(Cases) > 0) %>%
   mutate(weight = ifelse(Cases == 0, 0, Cases / sum(Cases))) %>%
   summarise(seasonal = sum(seasonal * weight),
             .groups = "drop") %>%
@@ -126,9 +125,9 @@ seasonal_weighted = all_decomp %>%
 
 save(seasonal_weighted, file="../data/china/seasonal_weighted.rda")
 
-ggplot(seasonal_weighted, aes(x=Month, y=seasonal, color=shortName, group=shortName)) +
+ggplot(seasonal_weighted, aes(x=Month, y=seasonal, color=shapeName, group=shapeName)) +
   geom_line(linewidth=1) +
-  geom_label_repel(data=peak(seasonal_weighted, "seasonal"), aes(x=Month, label=shortName),
+  geom_label_repel(data=peak(seasonal_weighted, "seasonal"), aes(x=Month, label=shapeName),
                    hjust=0, nudge_x=1, alpha=0.75) +
   labs(y = "Case-weighted seasonal transmission multiplier") +
   scale_x_continuous(breaks=1:12, labels=month.abb, minor_breaks=NULL) +
