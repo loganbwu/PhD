@@ -20,7 +20,7 @@ prec_dir = "../data/wc2.1_2.5m_prec"
 # bio_dir = "../data/wc2.1_2.5m_bio"
 # bio_names = c("Annual mean temperature", "Mean diurnal range", "Isothermality", "Temperature seasonality", "Max temperature of warmest month", "Min temperature of coldest month", "Temperature annual range", "Mean temperature of wettest quarter", "Mean temperature of driest quarter", "Mean temperature of the warmest quarter", "Mean temperature of the coldest quarter", "Annual precipitation", "Precipitation of wettest month", "Precipitation of driest month", "Precipitation seasonality", "Precipitation of wettest quarter", "Precipitation of driest quarter", "Precipitation of warmest quarter", "Precipitation of coldest quarter")
 
-read_worldclim = function(dir) {
+read_worldclim_stars = function(dir) {
   tifs = list.files(dir, "\\.tif$", full.names=T)
   tifs_num = as.integer(str_extract(tifs, "[0-9]+(?=\\.tif$)"))
   raw = do.call(c, lapply(tifs[order(tifs_num)], read_stars))
@@ -41,6 +41,7 @@ read_worldclim_terra = function(dir) {
   names(raw) = names(raw) %>% str_extract("[^_]+_[0-9]+$")
   raw
 }
+read_worldclim = read_worldclim_raster
 
 
 extract_layers = function(layers, geom, names_to="layer", use_area_weighted_quantiles=TRUE) {
@@ -50,11 +51,16 @@ extract_layers = function(layers, geom, names_to="layer", use_area_weighted_quan
   var_name = names(layers)[1] %>% str_extract("[^_]+(?=_)")
   var_names = paste(var_name, c("mean", "LQ", "UQ"), sep="_")
   
-  fns = list(mean, function(x) { quantile(x, 0.25) }, function(x) { quantile(x, 0.75) }) %>%
+  fns = list(function(x) { mean(x, na.rm=T) },
+             function(x) { quantile(x, 0.25, na.rm=T) },
+             function(x) { quantile(x, 0.75, na.rm=T) }) %>%
     setNames(var_names)
   if (use_area_weighted_quantiles) {
     # list col version with one value in the vector per cell covered
-    raw_values = lapply(fns, function(f) raster::extract(layers, geom))
+    raw_values = lapply(fns, function(f) {
+      val = raster::extract(layers, geom)
+      val[!is.na(val)]
+      })
     processed_values = lapply(seq_along(raw_values) %>% setNames(names(raw_values)), function(i) {
       x = raw_values[[i]] %>% setNames(paste0("V", seq_along({.})))
       column = lapply(seq_along(x), function(j) {
@@ -73,7 +79,7 @@ extract_layers = function(layers, geom, names_to="layer", use_area_weighted_quan
       pivot_wider(names_from = var, values_fn = list)
   } else {
     # single value per geometry
-    raw_values = lapply(fns, function(f) st_extract(layers, geom, FUN=f))
+    raw_values = lapply(fns, function(f) raster::extract(layers, geom, FUN=f))
     processed_values = lapply(seq_along(raw_values), function(i) {
       x = raw_values[[i]] %>% st_drop_geometry() %>%
         as_tibble() %>%
@@ -120,11 +126,12 @@ Data from https://worldclim.org/data/worldclim21.html
 
 ```{r}
 tavg_sites = extract_layers(tavg, sites, "month")
-tmin_sites = extract_layers(tmin, sites, "month", use_area_weighted_quantiles = FALSE)
-tmax_sites = extract_layers(tmax, sites, "month", use_area_weighted_quantiles = FALSE)
-temp_sites = tmin_sites %>%
-  full_join(tavg_sites) %>%
-  full_join(tmax_sites)
+# tmin_sites = extract_layers(tmin, sites, "month", use_area_weighted_quantiles = FALSE)
+# tmax_sites = extract_layers(tmax, sites, "month", use_area_weighted_quantiles = FALSE)
+# temp_sites = tmin_sites %>%
+#   full_join(tavg_sites) %>%
+#   full_join(tmax_sites)
+temp_sites = tavg_sites
 
 prec_sites = extract_layers(prec, sites, "month", use_area_weighted_quantiles = FALSE)
 # bio_sites = extract_layers(bio, sites) %>%
@@ -133,7 +140,7 @@ prec_sites = extract_layers(prec, sites, "month", use_area_weighted_quantiles = 
 
 ```{r}
 temp_sites.2 = temp_sites
-temp_sites.2$tavg_mean = sapply(temp_sites.2$tavg_mean, mean)
+temp_sites.2$tavg_mean = sapply(temp_sites.2$tavg_mean, function(x) {mean(x, na.rm=T)})
 temp_sites.2$tavg_LQ = sapply(temp_sites.2$tavg_LQ, mean)
 temp_sites.2$tavg_UQ = sapply(temp_sites.2$tavg_UQ, mean)
 p_temp = temp_sites.2 %>%
@@ -172,7 +179,16 @@ quadratic = function(q, r, s) {
     pmax(0, q*t^2 + r*t + s)
   }
 }
-relationship_names = c("a"="biting rate", "b.c"="vector competence", "p"="daily adult survival probability", "PDR"="parasite development rate", "p_EA"="egg-to-adult survival probability", "MDR"="mosquito development rate", "EFD"="eggs laid per adult female per day", "mu"="expected adult lifetime", "R0"="basic reproductive number")
+
+relationship_names = c("a"="biting rate",
+                       "b.c"="vector competence",
+                       "p"="daily adult survival probability",
+                       "PDR"="parasite development rate",
+                       "p_EA"="egg-to-adult survival probability",
+                       "MDR"="mosquito development rate",
+                       "EFD"="eggs laid per adult female per day",
+                       "mu"="expected adult lifetime",
+                       "R0"="basic reproductive number")
 relationships = list(
   # biting rate
   a = briere(0.000203, 42.3, 11.7),
@@ -181,7 +197,7 @@ relationships = list(
   # daily adult survival probability
   p = quadratic(-0.000828, 0.0367, 0.522),
   # parasite development rate
-  PDR = briere(0.000111, 34.4, 14.7),
+  PDR = briere(0.000111, 34.4, 14.7), # falciparum?
   # egg-to-adult survival probability
   p_EA = quadratic(-0.00924, 0.453, -4.77),
   # mosquito development rate
@@ -192,6 +208,20 @@ relationships = list(
 relationships$mu = function(temp) {
   -log(relationships$p(temp))
 }
+relationships$PDR_vivax = function(t) {
+  relationships$PDR(t) * approx(c(16, 30), c(2, 1.2), t, yleft=2, yright=1.2)$y
+}
+
+relationships_v = relationships
+relationships_v$PDR = relationships$PDR_vivax
+
+tibble(temp = seq(10, 35, length.out=1000),
+       falciparum = 1/relationships$PDR(temp),
+       vivax = 1/relationships$PDR_vivax(temp)) %>%
+  pivot_longer(cols=c(falciparum, vivax), values_to="mean duration", names_to = "species") %>%
+  ggplot(aes(x=`mean duration`, y=temp, color=species)) +
+  geom_path() +
+  coord_cartesian(xlim=c(5, 30), ylim=c(15, 35))
 
 constants = list(
   # human density
@@ -200,13 +230,16 @@ constants = list(
   r = 0.01
 )
 
-R0 = function(t) {
-  with(c(relationships, constants), {
+R0 = function(t, .rel=relationships) {
+  with(c(.rel, constants), {
     sqrt(
       a(t)^2 * b.c(t) * exp(-mu(t)/PDR(t)) * EFD(t) * p_EA(t) * MDR(t) /
         (N * r * mu(t)^3)
     )
   })
+}
+R0_vivax = function(t) {
+  R0(t, .rel=relationships_v)
 }
 R0_unif = function(tmin, tmax) {
   # Uniform quadrature
@@ -215,36 +248,48 @@ R0_unif = function(tmin, tmax) {
     center = (.tmin + .tmax) / 2
     spread_multiplier = 1.5
     t = seq(center - range*spread_multiplier/2, center + range*spread_multiplier/2, length.out=100)
-    mean(R0(t))
+    mean(R0(t), na.rm=T)
   }, tmin, tmax)
 }
 R0_quad = function(t) {
-    mean(R0(t))
+    mean(R0(t), na.rm=T)
+}
+R0_quad_vivax = function(t) {
+    mean(R0(t, .rel=relationships_v), na.rm=T)
 }
 
-tt = seq(10, 40, length.out=10000)
+tt = seq(16, 20, length.out=10000)
+# tt = c(20, 20.01)
 relationship_results = lapply(relationships,
                               function(f) {
                                 f(tt)
                               }) %>%
   as_tibble() %>%
   mutate(temperature = tt,
-         R0 = R0(temperature)) %>%
+         R0 = R0(temperature),
+         R0_vivax = R0_vivax(temperature),
+         ratio = R0_vivax / R0,
+         TEMP_f = exp(-mu/PDR),
+         TEMP_v = exp(-mu/PDR_vivax)) %>%
   pivot_longer(-temperature) %>%
-  mutate(name = fct_relevel(name, "a", "b.c", "p", "PDR", "MDR", "p_EA", "EFD", "mu", "R0")) %>%
-  filter(name != "mu")
+  mutate(name = fct_relevel(name, "a", "b.c", "p", "PDR", "PDR_vivax", "MDR", "p_EA", "EFD", "mu", "R0")) #%>%
+  # filter(temperature > 16, temperature < 20.1)
+  # filter(!name %in% "mu")
 
 ggplot(relationship_results, aes(x=temperature, y=value)) +
   geom_line() +
   facet_wrap(vars(name), scales="free_y")
+
+
 ```
 
 Apply R0 function to areas
 
 ```{r}
-temp_sites$tavg_mean_mean = sapply(temp_sites$tavg_mean, mean)
-temp_sites$R0_quad = sapply(temp_sites$tavg_mean, function(t) {mean(R0(t))})
-temp_sites$R0_avg = sapply(temp_sites$tavg_mean, function(t) {R0(mean(t))})
+temp_sites$tavg_mean_mean = sapply(temp_sites$tavg_mean, function(x) mean(x, na.rm=T))
+temp_sites$R0_quad = sapply(temp_sites$tavg_mean, R0_quad)
+temp_sites$R0_quad_vivax = sapply(temp_sites$tavg_mean, R0_quad_vivax)
+temp_sites$R0_avg = sapply(temp_sites$tavg_mean, function(t) {R0(mean(t, na.rm=T))})
 temp_sites = as_tibble(temp_sites)
 
 save(temp_sites, file="../data/china/temp_sites.rda")
@@ -255,12 +300,17 @@ plot_data = temp_sites %>%
             by=c("shapeName", "month"="Month")) %>%
   # rename(shapeName = shapeName.x) %>%
   group_by(shapeName) %>%
-  mutate(tavg = tavg_mean_mean / max(tavg_mean_mean),
-         R0_quad = R0_quad / max(c(R0_quad)),
-         R0_avg = R0_avg / max(c(R0_avg))) %>%
-  pivot_longer(c(R0_quad, R0_avg, Falciparum, Vivax, tavg)) %>%
+  mutate(tavg = tavg_mean_mean / max(tavg_mean_mean, na.rm=T),
+         # tavg = tavg_mean_mean,
+         # R0_quad = R0_quad / max(c(R0_quad, na.rm=T)),
+         # R0_quad_vivax = R0_quad_vivax / max(c(R0_quad_vivax, na.rm=T)),
+         # R0_avg = R0_avg / max(c(R0_avg, na.rm=T))
+         ) %>%
+  pivot_longer(c(R0_quad, R0_quad_vivax, R0_avg, Falciparum, Vivax, tavg)) %>%
   mutate(shapeName = factor(shapeName, levels=levels(sites$shapeName)),
-         name = fct_relevel(name, "tavg", "Falciparum", "Vivax", "R0_quad", "R0_avg"))
+         name = fct_relevel(name, "tavg", "Falciparum", "Vivax", "R0_quad", "R0_avg", "R0_quad_vivax") %>%
+           fct_recode(`R0_quad Vivax` = "R0_quad_vivax")) %>%
+  filter(name %in% c("Falciparum", "Vivax", "R0_quad", "R0_quad Vivax"))
 
 ggplot(plot_data %>% filter(name != "Falciparum", name != "Vivax"),
        aes(x=month, y=value, color=name)) +
@@ -268,8 +318,8 @@ ggplot(plot_data %>% filter(name != "Falciparum", name != "Vivax"),
   geom_point(data=plot_data %>% filter(name %in% c("Falciparum", "Vivax"))) +
   facet_wrap(vars(shapeProvince, shapeName)) +
   scale_x_continuous(breaks=1:12, labels=substr(month.abb, 0, 1), minor_breaks=NULL) +
-  scale_y_continuous(breaks=0:1, labels=c(0, "Max")) +
-  scale_color_manual(values=c("tavg"="tomato", "Falciparum"="darkgrey", "Vivax"="black", "R0_quad"="navy", "R0_avg"="limegreen")) +
+  # scale_y_continuous(breaks=0:1, labels=c(0, "Max")) +
+  scale_color_manual(values=c("tavg"="tomato", "Falciparum"="darkgrey", "Vivax"="black", "R0_quad"="navy", "R0_avg"="limegreen", "R0_quad Vivax"="orange")) +
   labs(x=NULL, y = NULL) +
   theme_minimal() +
   theme(plot.background=element_rect(fill="white"))
@@ -331,4 +381,40 @@ m2 = tm_shape(selection_R0) +
   tm_shape(selection_geom) +
   tm_borders()
 tmap_save(m2, paste0("plots/map_R0_", str_to_lower(selection), ".png"))
+```
+
+```{r map}
+map_folder = "~/Documents/MalariaData/data-raw/TSI-Martens2-Pv.2000-2022.Data.5km.Data.Crop"
+
+# map = read_map(map_folder)
+# map_sites = extract_layers(map, sites, "month", FALSE)
+tifs = tibble(path = list.files(map_folder, full.names=T)) %>%
+  mutate(filename = basename(path),
+         year = str_extract(filename, "(1|2)[0-9]{3}") %>% as.numeric()) %>%
+  filter(year < 2010)
+
+x = terra::rast(tifs$path)
+# x = stars::read_stars(tifs)
+# val = st_extract(x, sites)
+map_sites = terra::extract(x, sites) %>%
+  pivot_longer(-ID, names_to="layer") %>%
+  group_by(ID, layer) %>%
+  summarise(value = mean(value, na.rm=T),
+            .groups = "drop") %>%
+  mutate(shapeName = sites$shapeName[ID],
+         shapeNameCN = sites$shapeNameCN[ID],
+         shapeProvince = sites$shapeProvince[ID],
+         Latitude = sites$Latitude[ID],
+         year = layer %>% str_extract("[0-9]{4}") %>% as.numeric(),
+         month = layer %>% str_extract("\\.[0-9]{2}\\.") %>% str_extract("[0-9]+") %>% as.numeric(),
+         yearmonth = year*12 + month) %>%
+  group_by(shapeName, month) %>%
+  summarise(value = mean(value),
+            .groups = "drop")
+
+save(map_sites, file="../data/china/map_sites.rda")
+
+ggplot(map_sites, aes(x=month, y=value, color=shapeName)) +
+  geom_line() +
+  facet_wrap(vars(shapeName))
 ```

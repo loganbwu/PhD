@@ -1,0 +1,41 @@
+---
+title: "Guojing relapse data"
+output: html_notebook
+---
+
+```{r setup}
+library(tidyverse)
+library(readxl)
+```
+
+```{r}
+data = read_excel("~/Documents/MalariaData/data-raw/china/Guantang Relapse Data - GJY.xlsx") %>%
+  mutate(`Study location` = ifelse(is.na(`Study location`), row_number(), `Study location`)) %>%
+  column_to_rownames("Study location") %>%
+  t() %>%
+  as.data.frame() %>%
+  rownames_to_column("Location") %>%
+  select(Location, `Long incubation`, `Climatic zone (latitude)`, `Short incubation`) %>%
+  slice(-1) %>%
+  mutate(Latitude = `Climatic zone (latitude)` %>%
+           str_extract("[0-9]+") %>%
+           as.numeric(),
+         Zone = `Climatic zone (latitude)` %>% str_remove(" zone.+$")) %>%
+  select(-`Climatic zone (latitude)`) %>%
+  pivot_longer(matches("incubation"), names_to="Duration", values_to="Count") %>%
+  arrange(Latitude) %>%
+  mutate(Count = as.numeric(Count),
+         Zone = fct_inorder(Zone) %>% fct_rev())
+
+labels = data %>%
+  group_by(Zone) %>%
+  slice(1)
+
+ggplot(data, aes(x=Latitude, y=Count, fill=Duration)) +
+  geom_col() +
+  coord_flip() +
+  geom_text(data=labels, aes(label = paste(Zone, "zone"), y=0.5), hjust=0, color="white") +
+  geom_vline(xintercept = 22.5, linetype="dashed") +
+  labs(fill = NULL)
+ggsave("plots/incubation_period.svg", width=6, height=2)
+```

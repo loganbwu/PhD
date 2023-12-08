@@ -20,25 +20,37 @@ sites = st_read("../data/china/sites.geojson") %>%
   mutate(Latitude = st_coordinates(st_centroid(.))[,2],
          shapeProvince = fct_inorder(shapeProvince),
          shapeName = fct_inorder(shapeName)) %>%
-  filter(shapeName != "Maoyang", shapeName != "Wanning")
+  filter(shapeName != "Maoyang")
 
 species = c("Vivax", "Falciparum") %>% setNames({.})
+
+population = c("Dengzhou" = 1000000,
+               "Huangchuan" = 200000,
+               "Guantang" = 30000,
+               "Thasongyang" = 10000,
+               "Tengchong" = 1000000,
+               "Yingjiang" = 100000,
+               "Shangqiu" = 1000000,
+               "Wanning" = 100000,
+               "Hainan", 9000000)
 ```
 
 ```{r data}
-species_list = lapply(species, function(s) {
+species_data = lapply(species, function(s) {
   data_list = lapply(sites$shapeName %>% setNames({.}), function(x) {
-    load_region(tolower(x), species=c(s, "Mixed"))
-  })
-})
-
-species_data = lapply(species_list, function(s) {
-  data = bind_rows(s, .id="shapeName") %>%
+    load_region(tolower(x), species=c(s, "Mixed"), source="all")
+  }) %>%
+    bind_rows(.id="shapeName") %>%
     right_join(sites, by="shapeName") %>%
     mutate(Tag = paste0("[", shapeProvince, "] ", shapeName))
 })
+
 all_data = bind_rows(species_data, .id="Species") %>%
-  mutate(shapeName = factor(shapeName, levels=levels(sites$shapeName)))
+  mutate(shapeName = factor(shapeName, levels=levels(sites$shapeName))) %>%
+  group_by(Species, shapeName) %>%
+  # Flags to exclude from plot if it's just a leading/trailing string of zeroes to the start/end
+  mutate(prev_total = cumsum(Cases) - Cases,
+         next_total = max(prev_total) - cumsum(Cases))
 
 data_ranges = bind_rows(species_data) %>%
   group_by(shapeName) %>%
@@ -55,7 +67,7 @@ plot_cases = ggplot(data_ranges) +
   geom_rect(aes(xmin=End, xmax=max(all_data$Date), ymin=1e-1, ymax=1e5),
             fill = "white",
             alpha = 0.75) +
-  geom_line(data=all_data, aes(x=Date, y=Cases, color=Species), alpha=0.8) +
+  geom_line(data=all_data %>% filter(prev_total > 0, next_total > 0), aes(x=Date, y=Cases, color=Species), alpha=0.8) +
   facet_wrap(vars(shapeName), ncol=1) +
   scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
                minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
@@ -64,9 +76,68 @@ plot_cases = ggplot(data_ranges) +
   scale_y_log10(labels=label_auto2, expand=c(0, 0)) +
   coord_cartesian(ylim=c(1, NA)) +
   labs(x = "Month",
-       y = "Cases (per month)")
+       y = "Cases per month")
 plot_cases
-ggsave(paste0("plots/china_cases.svg"), width=6, height=6)
+ggsave(paste0("plots/china_cases.svg"), width=8, height=5)
+
+ plot_cases_scaled = all_data %>%
+  mutate(Cases_scaled = Cases/population[shapeName]) %>%
+  filter(Species == "Vivax") %>%
+  ggplot() +
+  geom_line(aes(x=Date, y=Cases_scaled*100), alpha=0.8) +
+  facet_wrap(vars(shapeName), ncol=1, scales="free_y") +
+  # scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
+  #              minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
+  #              date_labels="%b\n%Y",
+  #              expand = c(0, 0)) +
+  # scale_y_log10(labels=label_auto2, expand=c(0, 0)) +
+  labs(x = "Month",
+       y = "Cases (per 100 per month)")
+plot_cases_scaled
+ggsave(paste0("plots/china_cases_scaled.svg"), width=6, height=6)
+```
+
+```{r}
+province_labels = all_data %>%
+  filter(Species == "Vivax") %>%
+  group_by(shapeName) %>%
+  arrange(desc(Cases)) %>%
+  slice(1)
+plot_provincial_cases = all_data %>%
+  filter(Species == "Vivax") %>%
+  ggplot(aes(x=Date, y=Cases, color=shapeName)) +
+  geom_line(alpha=0.8) +
+  geom_label_repel(data=province_labels, aes(label = shapeName)) +
+  facet_wrap(vars(shapeProvince), ncol=1) +
+  scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="10 year"),
+               minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
+               date_labels="%Y",
+               expand = c(0, 0)) +
+  scale_y_log10(labels=label_auto2, expand=c(0, 0)) +
+  coord_cartesian(ylim=c(1, NA)) +
+  labs(x = NULL,
+       y = "Monthly local cases") +
+  theme(legend.position = "None")
+plot_provincial_cases
+ggsave(paste0("plots/china_provincial_cases.svg"), width=4, height=6)
+
+plot_country_cases = all_data %>%
+  filter(Species == "Vivax") %>%
+  ggplot(aes(x=Date, y=Cases, color=shapeName)) +
+  geom_line(alpha=0.8) +
+  geom_label_repel(data=province_labels, aes(label = shapeName)) +
+  # facet_wrap(vars(shapeProvince), ncol=1) +
+  scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="10 year"),
+               minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
+               date_labels="%Y",
+               expand = c(0, 0)) +
+  scale_y_log10(labels=label_auto2, expand=c(0, 0)) +
+  coord_cartesian(ylim=c(1, NA)) +
+  labs(x = NULL,
+       y = "Monthly local cases") +
+  theme(legend.position = "None")
+plot_country_cases
+ggsave(paste0("plots/china_country_cases.svg"), width=8, height=2)
 ```
 
 ```{r}
@@ -83,7 +154,11 @@ species_decomp = lapply(species_list, function(s) {
 all_decomp = bind_rows(species_decomp, .id="Species")
 ```
 
-```{r}
+```{r save_trend}
+trend = all_decomp %>%
+  select(Species, shapeName, Date, trend)
+save(trend, file="../data/china/trend.rda")
+
 plot_trend = ggplot(data_ranges) +
   geom_rect(aes(xmin=min(all_data$Date), xmax=Start, ymin=1e-2, ymax=1e5),
             fill = "white",
@@ -91,7 +166,7 @@ plot_trend = ggplot(data_ranges) +
   geom_rect(aes(xmin=End, xmax=max(all_data$Date), ymin=1e-2, ymax=1e5),
             fill = "white",
             alpha = 0.75) +
-  geom_line(data=all_decomp, aes(x=Date, y=trend, color=Species), linewidth=1, alpha=0.8) +
+  geom_line(data=trend, aes(x=Date, y=trend, color=Species), linewidth=1, alpha=0.8) +
   facet_wrap(vars(shapeName), ncol=1) +
   # facet_grid(vars(Region), vars(State), scales="free_y") +
   scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
@@ -107,21 +182,18 @@ plot_trend
 ggsave(paste0("plots/china_trend.svg"), width=6, height=6)
 ```
 
-```{r}
-# seasonal_weighted = lapply(species_decomp, function(decomp) {
-#   lapply(decomp, function(location) {
-#     total_cases = sum(location$Cases)
-#   })
-# })
+```{r save_seasonal}
 seasonal_weighted = all_decomp %>%
-  select(Species, shapeName, Latitude, Month, Cases, seasonal) %>%
-  group_by(Species, shapeName, Latitude, Month) %>%
+  select(Species, shapeName, shapeProvince, Latitude, Month, Cases, seasonal) %>%
+  group_by(Species, shapeProvince, shapeName, Latitude, Month) %>%
   # filter(sum(Cases) > 0) %>%
   mutate(weight = ifelse(Cases == 0, 0, Cases / sum(Cases))) %>%
   summarise(seasonal = sum(seasonal * weight),
             .groups = "drop") %>%
-  group_by(Species, shapeName) %>%
-  mutate(seasonal = ifelse(seasonal==0, 0, seasonal / max(seasonal)))
+  group_by(Species, shapeName, shapeProvince) %>%
+  mutate(seasonal = ifelse(seasonal==0, 0, seasonal),
+         seasonal = seasonal / mean(seasonal)) %>% # normalised to average 1
+  ungroup()
 
 save(seasonal_weighted, file="../data/china/seasonal_weighted.rda")
 
@@ -133,4 +205,108 @@ ggplot(seasonal_weighted, aes(x=Month, y=seasonal, color=shapeName, group=shapeN
   scale_x_continuous(breaks=1:12, labels=month.abb, minor_breaks=NULL) +
   facet_wrap(vars(Species), ncol=1)
 ggsave(paste0("plots/china_seasonal.svg"), width=6, height=4)
+
+seasonal_weighted_vivax = seasonal_weighted %>% filter(Species=="Vivax")
+ggplot(seasonal_weighted_vivax, aes(x=Month, y=seasonal, color=shapeName, group=shapeName)) +
+  geom_line(linewidth=1) +
+  geom_label_repel(data=peak(seasonal_weighted_vivax, "seasonal"), aes(x=Month, label=shapeName),
+                   hjust=0, nudge_x=1, alpha=0.75) +
+  labs(y = "Case-weighted seasonal transmission multiplier") +
+  scale_x_continuous(breaks=1:12, labels=month.abb, minor_breaks=NULL) +
+  facet_wrap(vars(shapeProvince), ncol=1) +
+  # scale_color_brewer(palette="Set2") +
+  theme(legend.position = "None") +
+  labs(x = NULL)
+ggsave(paste0("plots/china_seasonal_byprovince.svg"), width=6, height=4)
 ``` 
+
+Focus on Tengchong
+
+```{r}
+selection = "Wanning"
+
+temp_sites = NULL
+.get_month = function(t) {
+  if (is.Date(t)) {
+    t = as.numeric(t - as.Date(paste0(year(t), "-01-01")))
+  }
+  day = t %% 365.25
+  day / (365.25/12)
+}
+
+make_suitability = function(selection) {
+  if (is.null(temp_sites)) {
+    load("~/Documents/PhD/data/china/temp_sites.rda", envir=.GlobalEnv)
+  }
+  .suitability = temp_sites %>%
+    filter(shapeName == selection) %>%
+    select(month, R0=R0_quad, temp=tavg_mean_mean)
+  if (nrow(.suitability) == 0) {
+    stop("Zero rows in suitability lookup for given selection")
+  }
+  # loop and adjust dates
+  .suitability = bind_rows(tail(.suitability, 1) %>% mutate(month=month-12), .suitability) %>%
+    bind_rows(head(.suitability, 1) %>% mutate(month=month+12)) %>%
+    mutate(month = month - 0.5)
+  function(t) {
+    month = .get_month(t)
+    approx(x = .suitability$month,
+           y = .suitability$R0,
+           xout = month)$y
+  }
+}
+
+suitability=make_suitability(selection)
+
+seasonal_weighted %>%
+  pivot_wider(names_from=Species, values_from=seasonal) %>%
+  mutate(v_f_ratio = Vivax / Falciparum) %>%
+  pivot_longer(c(Falciparum, Vivax, v_f_ratio), names_to="Species", values_to="seasonal") %>%
+  mutate(Suitability = suitability(Month*365.25/12)) %>%
+  filter(shapeName == selection) %>%
+  ggplot(aes(x=Month, y=seasonal, color=Species)) +
+  geom_line() +
+  geom_line(aes(y = Suitability), color="black") +
+  scale_x_continuous(breaks=1:12, labels=month.abb, minor_breaks=NULL) 
+labs(title = selection,
+     subtitle = "Temperature-dependent suitability (black) with decomposed incidence seasonality")
+```
+
+```{r}
+# Additional plot for presentation
+vivax_data = lapply(sites$shapeName %>% setNames({.}), function(x) {
+  local = load_region(tolower(x), species="Vivax", source="Local")
+  all = load_region(tolower(x), species="Vivax", source="all")
+  bind_rows(Local = local,
+            Total = all,
+            .id = "Source")
+}) %>%
+  bind_rows(.id="shapeName") %>%
+  right_join(sites, by="shapeName") %>%
+  mutate(Tag = paste0("[", shapeProvince, "] ", shapeName))
+
+data_ranges = bind_rows(vivax_data) %>%
+  group_by(shapeName) %>%
+  summarise(Start = min(Date),
+            End = max(Date)) %>%
+  mutate(shapeName = factor(shapeName, levels=levels(sites$shapeName)))
+
+plot_cases = ggplot(data_ranges) +
+  geom_rect(aes(xmin=min(vivax_data$Date), xmax=Start, ymin=1e-1, ymax=1e5),
+            fill = "white",
+            alpha = 0.75) +
+  geom_rect(aes(xmin=End, xmax=max(vivax_data$Date), ymin=1e-1, ymax=1e5),
+            fill = "white",
+            alpha = 0.75) +
+  geom_line(data=vivax_data, aes(x=Date, y=Cases, color=Source), alpha=0.8) +
+  facet_wrap(vars(shapeName), ncol=1) +
+  scale_x_date(breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="5 year"),
+               minor_breaks = seq(as_date("1950-01-01"), as_date("2030-01-01"), by="1 year"),
+               date_labels="%b\n%Y",
+               expand = c(0, 0)) +
+  scale_y_log10(labels=label_auto2, expand=c(0, 0)) +
+  coord_cartesian(ylim=c(1, NA)) +
+  labs(x = "Month",
+       y = "Cases (per month)")
+plot_cases
+```

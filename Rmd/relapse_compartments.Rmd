@@ -32,12 +32,13 @@ sample_var = var(sample_1st)
 m = a/b
 v = a/b^2
 v = m/b
-b = m/v
+b = mean/variance
 a = m*b
-a = m^2/v
-
+a = mean^2/variance
 
 ```{r}
+sample_mean = sample_mean - 72
+sample_var = sample_var - 1/(1/72)^2
 # shape = 50 # number of compartments
 shape = sample_mean^2 / sample_var
 # rate = 1/2 # rate = 1 / mean time spent in each compartment
@@ -46,7 +47,7 @@ rate = sample_mean / sample_var
 
 time = seq(0, 365*2, length.out=1000)
 tibble(time=time,
-       density = dgamma(time, round(shape), rate)) %>%
+       density = dgamma(time, round(shape), 1/(round(1/rate)))) %>%
   ggplot(aes(x=time, y=density)) +
   geom_line()
 
@@ -58,3 +59,28 @@ tibble(time=time,
 #   geom_density()
 ```
 
+Erlang dormancy with an exponential final relapse period
+
+```{r}
+d = 162
+dormancy_sd = 49
+dormancy_var = dormancy_sd^2
+delta = 1/d
+
+n_compartments = 11
+dist_exp = list(lambda=1/72, mean = 72, var=72^2)
+
+
+
+n = 100000
+samples = tibble(i = seq_len(n),
+                 dormancy = rgamma(n, shape=d^2/dormancy_var, rate=d/dormancy_var),
+                 latency = rexp(n, rate=dist_exp$lambda),
+                 total = dormancy + latency)
+
+samples %>%
+  pivot_longer(-i) %>%
+  ggplot(aes(x = value, fill = name)) +
+  geom_density(alpha=0.8, color="transparent") +
+  facet_wrap(vars(name), ncol=1)
+```
