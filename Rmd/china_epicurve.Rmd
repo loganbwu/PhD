@@ -31,8 +31,8 @@ population = c("Dengzhou" = 1000000,
                "Tengchong" = 1000000,
                "Yingjiang" = 100000,
                "Shangqiu" = 1000000,
-               "Wanning" = 100000,
-               "Hainan", 9000000)
+               "Hainan" = 9000000,
+               "Wanning" = 100000)
 ```
 
 ```{r data}
@@ -50,7 +50,8 @@ all_data = bind_rows(species_data, .id="Species") %>%
   group_by(Species, shapeName) %>%
   # Flags to exclude from plot if it's just a leading/trailing string of zeroes to the start/end
   mutate(prev_total = cumsum(Cases) - Cases,
-         next_total = max(prev_total) - cumsum(Cases))
+         next_total = max(prev_total) - cumsum(Cases)) %>%
+  ungroup()
 
 data_ranges = bind_rows(species_data) %>%
   group_by(shapeName) %>%
@@ -80,7 +81,7 @@ plot_cases = ggplot(data_ranges) +
 plot_cases
 ggsave(paste0("plots/china_cases.svg"), width=8, height=5)
 
- plot_cases_scaled = all_data %>%
+plot_cases_scaled = all_data %>%
   mutate(Cases_scaled = Cases/population[shapeName]) %>%
   filter(Species == "Vivax") %>%
   ggplot() +
@@ -119,7 +120,7 @@ plot_provincial_cases = all_data %>%
        y = "Monthly local cases") +
   theme(legend.position = "None")
 plot_provincial_cases
-ggsave(paste0("plots/china_provincial_cases.svg"), width=4, height=6)
+ggsave(paste0("plots/china_provincial_cases.svg"), width=8, height=7)
 
 plot_country_cases = all_data %>%
   filter(Species == "Vivax") %>%
@@ -141,21 +142,27 @@ ggsave(paste0("plots/china_country_cases.svg"), width=8, height=2)
 ```
 
 ```{r}
-species_decomp = lapply(species_list, function(s) {
-  data_trends = lapply(s, function(d) {
-    decompose_data(d) %>%
-      pivot_wider(names_from=name)
+decomp = lapply(species %>% setNames({.}), function(s) {
+  lapply(levels(all_data$shapeName) %>% setNames({.}), function(x) {
+    dat = all_data %>% filter(shapeName == x, Species == s)
+    if (nrow(dat) > 0) {
+      dec = decompose_data(dat) %>%
+        pivot_wider(names_from=name)
+    } else {
+      dec = NULL
+    }
+    dec
   }) %>%
     bind_rows(.id="shapeName") %>%
     right_join(sites, by="shapeName") %>%
     mutate(Tag = paste0("[", shapeProvince, "] ", shapeName))
-})
-
-all_decomp = bind_rows(species_decomp, .id="Species")
+}) %>%
+  bind_rows(.id = "Species") %>%
+  mutate(shapeName = factor(shapeName, levels=levels(all_data$shapeName)))
 ```
 
 ```{r save_trend}
-trend = all_decomp %>%
+trend = decomp %>%
   select(Species, shapeName, Date, trend)
 save(trend, file="../data/china/trend.rda")
 
@@ -183,7 +190,7 @@ ggsave(paste0("plots/china_trend.svg"), width=6, height=6)
 ```
 
 ```{r save_seasonal}
-seasonal_weighted = all_decomp %>%
+seasonal_weighted = decomp %>%
   select(Species, shapeName, shapeProvince, Latitude, Month, Cases, seasonal) %>%
   group_by(Species, shapeProvince, shapeName, Latitude, Month) %>%
   # filter(sum(Cases) > 0) %>%
@@ -220,10 +227,10 @@ ggplot(seasonal_weighted_vivax, aes(x=Month, y=seasonal, color=shapeName, group=
 ggsave(paste0("plots/china_seasonal_byprovince.svg"), width=6, height=4)
 ``` 
 
-Focus on Tengchong
+Focus on a specific site
 
 ```{r}
-selection = "Wanning"
+selection = "Shangqiu"
 
 temp_sites = NULL
 .get_month = function(t) {
@@ -256,20 +263,33 @@ make_suitability = function(selection) {
   }
 }
 
-suitability=make_suitability(selection)
-
 seasonal_weighted %>%
   pivot_wider(names_from=Species, values_from=seasonal) %>%
-  mutate(v_f_ratio = Vivax / Falciparum) %>%
-  pivot_longer(c(Falciparum, Vivax, v_f_ratio), names_to="Species", values_to="seasonal") %>%
+  # mutate(v_f_ratio = Vivax / Falciparum) %>%
+  select(-Falciparum) %>%
   mutate(Suitability = suitability(Month*365.25/12)) %>%
+  pivot_longer(any_of(c("Falciparum", "Vivax", "v_f_ratio", "Suitability")), names_to="Species", values_to="seasonal") %>%
   filter(shapeName == selection) %>%
   ggplot(aes(x=Month, y=seasonal, color=Species)) +
   geom_line() +
-  geom_line(aes(y = Suitability), color="black") +
-  scale_x_continuous(breaks=1:12, labels=month.abb, minor_breaks=NULL) 
-labs(title = selection,
-     subtitle = "Temperature-dependent suitability (black) with decomposed incidence seasonality")
+  # geom_line(aes(y = Suitability), color="black") +
+  scale_x_continuous(breaks=1:12, labels=month.abb, minor_breaks=NULL) +
+  labs(title = paste(selection, "transmission suitability and overall historical pattern"),
+       # subtitle = "Temperature-dependent suitability (black) with decomposed incidence seasonality",
+       color = NULL)
+```
+
+```{r}
+# Look at zeroes in data
+zeroes = all_data %>%
+  filter(shapeName == selection,
+         Species == "Vivax") %>%
+  mutate(is.zero = Cases == 0) %>%
+  mutate(Year = year(Date))
+
+p = ggplot(zeroes, aes(x=Date, y=Cases, color=is.zero)) +
+  geom_point() +
+  facet_wrap(vars(Year), scales = "free")
 ```
 
 ```{r}
@@ -309,4 +329,28 @@ plot_cases = ggplot(data_ranges) +
   labs(x = "Month",
        y = "Cases (per month)")
 plot_cases
+```
+
+```{r}
+# Exploratory investigation into Henan
+all_data %>%
+  filter(shapeProvince == "Henan",
+         Species == "Vivax") %>%
+  ggplot(aes(x = Date, y=Cases)) +
+  geom_line() +
+  facet_wrap(vars(shapeName), ncol=1, scales="free_y") +
+  coord_cartesian(xlim = as_date(c("1980-01-01", "1991-01-01"))) +
+  scale_y_log10() +
+  labs("Vivax cases in selected regions in Henan in the 1980s")
+
+all_data %>%
+  filter(shapeProvince == "Henan",
+         Species == "Vivax",
+         shapeName != "Guantang") %>%
+  ggplot(aes(x = Date, y=Cases)) +
+  geom_line() +
+  facet_wrap(vars(shapeName), ncol=1, scales="free_y") +
+  coord_cartesian(xlim = as_date(c("1980-01-01", "2011-01-01"))) +
+  scale_y_log10()
+ggsave("plots/henan_selection.png", width=8, height=3)
 ```

@@ -60,7 +60,7 @@ extract_layers = function(layers, geom, names_to="layer", use_area_weighted_quan
     raw_values = lapply(fns, function(f) {
       val = raster::extract(layers, geom)
       val[!is.na(val)]
-      })
+    })
     processed_values = lapply(seq_along(raw_values) %>% setNames(names(raw_values)), function(i) {
       x = raw_values[[i]] %>% setNames(paste0("V", seq_along({.})))
       column = lapply(seq_along(x), function(j) {
@@ -133,7 +133,7 @@ tavg_sites = extract_layers(tavg, sites, "month")
 #   full_join(tmax_sites)
 temp_sites = tavg_sites
 
-prec_sites = extract_layers(prec, sites, "month", use_area_weighted_quantiles = FALSE)
+prec_sites = extract_layers(prec, sites, "month")
 # bio_sites = extract_layers(bio, sites) %>%
 #   mutate(layer = bio_names[layer])
 ```
@@ -152,12 +152,13 @@ p_temp = temp_sites.2 %>%
   facet_wrap(vars(shapeProvince)) +
   scale_x_continuous(breaks=1:12, labels=substr(month.abb, 0, 1), minor_breaks=NULL)
 
+prec_sites$precmean_mean = sapply(prec_sites$prec_mean, function(x) {mean(x, na.rm=T)})
 p_prec = prec_sites %>%
-  ggplot(aes(x=month, y=prec_mean, color=Latitude, group=shapeName)) +
+  ggplot(aes(x=month, y=precmean_mean, color=Latitude, group=shapeName)) +
   geom_line() +
-  geom_label_repel(data=peak(prec_sites, "prec_mean"), aes(x=month, y=prec_mean, label=shapeName),
-                   size=3, label.padding=unit(0.1, "lines"), hjust=0, nudge_x=1, alpha=0.75,
-                   direction="y") +
+  # geom_label_repel(data=peak(prec_sites, "prec_mean"), aes(x=month, y=prec_mean, label=shapeName),
+  #                  size=3, label.padding=unit(0.1, "lines"), hjust=0, nudge_x=1, alpha=0.75,
+  #                  direction="y") +
   facet_wrap(vars(shapeProvince)) +
   scale_colour_gradient(low="firebrick", high="salmon") +
   scale_x_continuous(breaks=1:12, labels=substr(month.abb, 0, 1), minor_breaks=NULL)
@@ -252,10 +253,10 @@ R0_unif = function(tmin, tmax) {
   }, tmin, tmax)
 }
 R0_quad = function(t) {
-    mean(R0(t), na.rm=T)
+  mean(R0(t), na.rm=T)
 }
 R0_quad_vivax = function(t) {
-    mean(R0(t, .rel=relationships_v), na.rm=T)
+  mean(R0(t, .rel=relationships_v), na.rm=T)
 }
 
 tt = seq(16, 20, length.out=10000)
@@ -273,8 +274,8 @@ relationship_results = lapply(relationships,
          TEMP_v = exp(-mu/PDR_vivax)) %>%
   pivot_longer(-temperature) %>%
   mutate(name = fct_relevel(name, "a", "b.c", "p", "PDR", "PDR_vivax", "MDR", "p_EA", "EFD", "mu", "R0")) #%>%
-  # filter(temperature > 16, temperature < 20.1)
-  # filter(!name %in% "mu")
+# filter(temperature > 16, temperature < 20.1)
+# filter(!name %in% "mu")
 
 ggplot(relationship_results, aes(x=temperature, y=value)) +
   geom_line() +
@@ -296,7 +297,10 @@ save(temp_sites, file="../data/china/temp_sites.rda")
 
 plot_data = temp_sites %>%
   # select(-tavg_mean, -tavg_LQ, -tavg_UQ)# %>%
-  full_join(seasonal_weighted %>% st_drop_geometry() %>% pivot_wider(names_from=Species, values_from=seasonal),
+  full_join(seasonal_weighted %>%
+              st_drop_geometry() %>%
+              pivot_wider(names_from=Species, values_from=seasonal) %>%
+              select(-shapeProvince),
             by=c("shapeName", "month"="Month")) %>%
   # rename(shapeName = shapeName.x) %>%
   group_by(shapeName) %>%
@@ -305,7 +309,7 @@ plot_data = temp_sites %>%
          # R0_quad = R0_quad / max(c(R0_quad, na.rm=T)),
          # R0_quad_vivax = R0_quad_vivax / max(c(R0_quad_vivax, na.rm=T)),
          # R0_avg = R0_avg / max(c(R0_avg, na.rm=T))
-         ) %>%
+  ) %>%
   pivot_longer(c(R0_quad, R0_quad_vivax, R0_avg, Falciparum, Vivax, tavg)) %>%
   mutate(shapeName = factor(shapeName, levels=levels(sites$shapeName)),
          name = fct_relevel(name, "tavg", "Falciparum", "Vivax", "R0_quad", "R0_avg", "R0_quad_vivax") %>%
@@ -345,7 +349,7 @@ relationship_grid = lapply(c(relationships, list(R0=R0)), function(f) {
 
 ggplot(relationship_grid, aes(x=month, y=tavg, fill=value)) +
   geom_raster() +
-  geom_ribbon(data=temp_selection, aes(ymin=tmin_mean , ymax=tmax_mean, y=NULL), fill="white", alpha=0.25) +
+  # geom_ribbon(data=temp_selection, aes(ymin=tmin_mean , ymax=tmax_mean, y=NULL), fill="white", alpha=0.25) +
   geom_line(data=temp_selection, aes(y=tavg_mean_mean, fill=NULL), color="white") +
   scale_x_continuous(breaks=1:12, labels=substr(month.abb, 0, 1), minor_breaks=NULL, expand=c(0,0)) +
   scale_y_continuous(expand=c(0,0)) +
@@ -417,4 +421,161 @@ save(map_sites, file="../data/china/map_sites.rda")
 ggplot(map_sites, aes(x=month, y=value, color=shapeName)) +
   geom_line() +
   facet_wrap(vars(shapeName))
+```
+
+# Griffin function
+
+What is the Griffin seasonality function?
+
+```{r}
+years = 365.25
+
+griffin_data = tibble(t = seq(0, years, length.out=500),
+       `Delayed\nε=0, κ=1, φ−=π/4` = make_m(0, 1, years/2)(t),
+       `Sharp trough\nε=0, κ=1/4` = make_m(0, 1/4, years/4)(t),
+       `Sharp peak\nε=0, κ=4` = make_m(0, 4, years/4)(t),
+       `Nonseasonal\nε=1` = make_m(1, 1, years/4)(t),
+       `Shallow\nε=1, κ=1` = make_m(1/2, 1, years/4)(t),
+       `Sinusoidal\nε=0, κ=1` = make_m(0, 1, years/4)(t)) %>%
+  pivot_longer(-t) %>%
+  mutate(name = name %>% str_replace(" - ", "\n")) %>%
+  mutate(name = fct_inorder(name) %>% fct_rev())
+griffin_labels = griffin_data %>%
+  group_by(name) %>%
+  arrange(desc(value)) %>%
+  slice(1) %>%
+  arrange(name)
+
+griffin_colors = c("black", palette.colors(nrow(griffin_labels)-1, palette="Set1")) %>%
+  setNames(griffin_labels$name)
+
+ggplot(griffin_data, aes(x = t/years*12, y = value, color = name)) +
+  geom_line() +
+  geom_label_repel(data=griffin_labels, aes(label = name), fill = alpha(c("white"), 0.8), label.padding=0.2, segment.color="transparent") +
+  facet_wrap(vars(name)) +
+  scale_x_continuous(breaks = 0:11, minor_breaks = NULL, labels = sapply(month.abb, function(x) {substr(x, 1, 1)}), expand = c(0, 0)) +
+  # scale_color_brewer(palette = "Set2") +
+  scale_color_manual(values = griffin_colors) +
+  theme(legend.position = "none",
+        strip.text = element_blank()) +
+  labs(title = "Transformations of the Griffin seasonality function",
+       x = "Month",
+       y = "Transmissibility multiplier")
+
+ggsave("../plots/griffin_function.png", width=8, height=4)
+```
+
+Can we fit the Griffin seasonality function to these?
+
+```{r}
+#' given MAP data, compute the least squares between MAP and the m() function
+diff_seasonality = function(x, data) {
+  eps = x[1]
+  kappa = x[2]
+  phase = x[3]
+  m_0 = x[4]
+  ts = data[[1]]
+  ss = data[[2]]
+  m = make_m(eps, kappa, phase, m_0)
+  m_out = m(ts)
+  rms = sqrt(mean((ss - m_out)^2))
+}
+
+
+init_params = c(0, 1, years/4/2, 1)
+fit_seasonality = function(region) {
+  data = map_sites %>%
+  filter(shapeName == region) %>%
+  mutate(day = month / 12 * 365.25 + 15) %>%
+  select(day, value)
+  optim_seasonality = optim(init_params, diff_seasonality, gr=NULL, data, method="L-BFGS-B",
+                          lower = c(0, 0.1, 0, 0),
+                          upper = c(0.9, Inf, 365.25, Inf))
+  params = optim_seasonality$par[-4]
+  c(
+    eps = params[1],
+    kappa = params[2],
+    phase = params[3]
+  )
+}
+fit_seasonalities = lapply(unique(map_sites$shapeName) %>% setNames({.}), fit_seasonality)
+fit_functions = lapply(fit_seasonalities, function(x) {
+  make_m(x[[1]], x[[2]], x[[3]])
+})
+```
+
+```{r}
+plot_data = map_sites %>%
+  select(shapeName, month, map = value) %>%
+  mutate(m = NA_real_)
+for (i in seq_len(nrow(plot_data))) {
+  day = map_sites$month[i] * (365.25/12) + 15
+  region = map_sites$shapeName[i]
+  plot_data$m[i] = fit_functions[[region]](day)
+}
+plot_data = plot_data %>%
+  group_by(shapeName) %>%
+  mutate(map = map / mean(map)) %>%
+  pivot_longer(c(map, m)) %>%
+  mutate(name = case_match(name,
+                           "m" ~ "MLE ω(t)",
+                           "map" ~ "Malaria Atlas")) %>%
+  filter(shapeName %in% c("Huangchuan", "Wanning"))
+
+# Change labels
+
+plot_labels = plot_data %>%
+  group_by(shapeName, name) %>%
+  arrange(desc(value)) %>%
+  slice(1) %>%
+  arrange(name)
+
+.make_curve_label = function(name, shapeName) {
+  if (name == "MLE ω(t)") {
+    fit = signif(fit_seasonalities[[shapeName]], 3)
+    return(paste0("ω(t; ε=", fit[["eps"]], ", κ=", fit[["kappa"]], ", φ=", fit[["phase"]], ")"))
+  } else {
+    return(name)
+  }
+}
+make_curve_label = Vectorize(.make_curve_label)
+
+ggplot(plot_data, aes(x = month, y = value, color = name, group = name)) +
+  geom_line() +
+  geom_label_repel(data=plot_labels, aes(label = make_curve_label(name, shapeName)), fill = alpha(c("white"), 0.8), label.padding=0.2, segment.color="transparent") +
+  scale_x_continuous(breaks = 1:12, minor_breaks = NULL, labels = sapply(month.abb, function(x) {substr(x, 1, 1)}), expand = c(0, 0)) +
+  scale_color_brewer(palette = "Set1") +
+  facet_wrap(vars(shapeName), ncol = 1) +
+  labs(title = "Least-square approximation of Malaria Atlas Project transmission suitability",
+       x = "Month (average, 2000-2010)",
+       y = "Normalised transmission suitability",
+       color = NULL) +
+  theme(legend.position = "none")
+ggsave("../plots/griffin_martens.png", width=8, height=4)
+```
+
+Check out Rondonia, Brazil:
+
+```{r}
+rondonia_file = "~/Documents/MalariaData/data-raw/brazil/rondonia/data_EPSG_4326/11MIE250GC_SIR.shp" # https://purl.stanford.edu/df159kw0955
+
+rondonia_geom = st_read(rondonia_file) %>%
+  st_union() %>%
+  st_as_sf() %>%
+  mutate(Name = "Rondonia")
+
+rondonia_map = terra::extract(x, rondonia_geom) %>%
+  pivot_longer(-ID, names_to="layer") %>%
+  group_by(ID, layer) %>%
+  summarise(value = mean(value, na.rm=T),
+            .groups = "drop") %>%
+  mutate(Name = rondonia_geom$Name[ID],
+         year = layer %>% str_extract("[0-9]{4}") %>% as.numeric(),
+         month = layer %>% str_extract("\\.[0-9]{2}\\.") %>% str_extract("[0-9]+") %>% as.numeric(),
+         yearmonth = year*12 + month,
+         date = as.Date(paste(year, month, "15", sep="-")))
+
+ggplot(rondonia_map, aes(x=month, y=value, color=year, group=year)) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:12)
 ```
