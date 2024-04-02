@@ -431,7 +431,7 @@ What is the Griffin seasonality function?
 years = 365.25
 
 griffin_data = tibble(t = seq(0, years, length.out=500),
-       `Delayed\nε=0, κ=1, φ−=π/4` = make_m(0, 1, years/2)(t),
+       `Delayed\nε=0, κ=1, ψ−=π/4` = make_m(0, 1, years/2)(t),
        `Sharp trough\nε=0, κ=1/4` = make_m(0, 1/4, years/4)(t),
        `Sharp peak\nε=0, κ=4` = make_m(0, 4, years/4)(t),
        `Nonseasonal\nε=1` = make_m(1, 1, years/4)(t),
@@ -533,7 +533,7 @@ plot_labels = plot_data %>%
 .make_curve_label = function(name, shapeName) {
   if (name == "MLE ω(t)") {
     fit = signif(fit_seasonalities[[shapeName]], 3)
-    return(paste0("ω(t; ε=", fit[["eps"]], ", κ=", fit[["kappa"]], ", φ=", fit[["phase"]], ")"))
+    return(paste0("ω(t; ε=", fit[["eps"]], ", κ=", fit[["kappa"]], ", ψ=", fit[["phase"]], ")"))
   } else {
     return(name)
   }

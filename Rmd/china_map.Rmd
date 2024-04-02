@@ -120,3 +120,184 @@ ggsave("plots/china_sites.png", width=6, height=4, scale=1)
 #   as.data.frame() %>%
 #   dput()
 ```
+
+Map of Henan
+
+```{r}
+library(maps)
+cities_comparison = world.cities %>%
+  filter(name %in% c("New York", "London", "Paris", "Miami", "Los Angeles"),
+         country.etc %in% c("USA", "UK", "France", "Spain"))
+cities_plot = world.cities %>%
+  filter(name %in% c("Shanghai", "Beijing")) %>%
+  st_as_sf(coords=c("long", "lat"), crs=4326)
+map_plot = ggplot() +
+  geom_sf(data = borders, color="grey", fill="grey") +
+  geom_sf(data = level1, color="white", fill="grey") +
+  geom_sf(data=henan, fill="#00FFFF", color="#00FFFF", linewidth=1, alpha=0.5) +
+  geom_sf(data=cities_plot) +
+  # geom_sf_text(data=cities_plot, aes(label=name)) +
+  ggrepel::geom_text_repel(
+    data = cities_plot,
+    aes(label = name, geometry = geometry),
+    stat = "sf_coordinates",
+    min.segment.length = 0
+  ) +
+  geom_sf_text(data=henan, aes(label=paste(shapeNameCN, str_remove(shapeName, " Province")))) +
+  coord_sf_bbox(china) +
+  scale_y_continuous(breaks=cities_comparison$lat,
+                     labels=cities_comparison$name) +
+  theme(panel.background = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) +
+  labs(x = NULL, y = NULL)
+```
+
+```{r}
+library(terra)
+library(tidyverse)
+library(stars)
+library(ggrepel)
+library(patchwork)
+library(memoise)
+R_functions = list.files("../R/functions", "\\.R$", recursive=TRUE, full.names=TRUE)
+for (file in R_functions) { source(file) }
+
+tavg_dir = "../data/wc2.1_2.5m_tavg"
+tmin_dir = "../data/wc2.1_2.5m_tmin"
+tmax_dir = "../data/wc2.1_2.5m_tmax"
+prec_dir = "../data/wc2.1_2.5m_prec"
+# bio_dir = "../data/wc2.1_2.5m_bio"
+# bio_names = c("Annual mean temperature", "Mean diurnal range", "Isothermality", "Temperature seasonality", "Max temperature of warmest month", "Min temperature of coldest month", "Temperature annual range", "Mean temperature of wettest quarter", "Mean temperature of driest quarter", "Mean temperature of the warmest quarter", "Mean temperature of the coldest quarter", "Annual precipitation", "Precipitation of wettest month", "Precipitation of driest month", "Precipitation seasonality", "Precipitation of wettest quarter", "Precipitation of driest quarter", "Precipitation of warmest quarter", "Precipitation of coldest quarter")
+
+# tavg = read_worldclim_raster(tavg_dir)
+# bio = read_worldclim(bio_dir)
+
+read_worldclim_stars = function(dir) {
+  tifs = list.files(dir, "\\.tif$", full.names=T)
+  tifs_num = as.integer(str_extract(tifs, "[0-9]+(?=\\.tif$)"))
+  raw = do.call(c, lapply(tifs[order(tifs_num)], read_stars))
+  names(raw) = names(raw) %>% str_extract("[^_]+_[0-9]+(?=\\.tif$)")
+  raw
+}
+read_worldclim_raster = function(dir) {
+  tifs = list.files(dir, "\\.tif$", full.names=T)
+  tifs_num = as.integer(str_extract(tifs, "[0-9]+(?=\\.tif$)"))
+  raw = raster::stack(tifs[order(tifs_num)])
+  names(raw) = names(raw) %>% str_extract("[^_]+_[0-9]+$")
+  raw
+}
+read_worldclim_terra = function(dir) {
+  tifs = list.files(dir, "\\.tif$", full.names=T)
+  tifs_num = as.integer(str_extract(tifs, "[0-9]+(?=\\.tif$)"))
+  raw = terra::rast(tifs[order(tifs_num)])
+  names(raw) = names(raw) %>% str_extract("[^_]+_[0-9]+$")
+  raw
+}
+
+
+tavg = read_worldclim_raster("../data/wc2.1_30s_tavg_crop")
+# tmin = read_worldclim(tmin_dir)
+# tmax = read_worldclim(tmax_dir)
+prec = read_worldclim_raster(prec_dir)
+
+
+extract_layers = function(layers, geom, names_to="layer", use_area_weighted_quantiles=TRUE) {
+  if (use_area_weighted_quantiles & !"RasterStack" %in% class(layers)) {
+    stop("Area-weighted quantiles requires `layers` to be a `RasterStack` object.")
+  }
+  var_name = names(layers)[1] %>% str_extract("[^_]+(?=_)")
+  var_names = paste(var_name, c("mean", "LQ", "UQ"), sep="_")
+  
+  fns = list(function(x) { mean(x, na.rm=T) },
+             function(x) { quantile(x, 0.25, na.rm=T) },
+             function(x) { quantile(x, 0.75, na.rm=T) }) %>%
+    setNames(var_names)
+  if (use_area_weighted_quantiles) {
+    # list col version with one value in the vector per cell covered
+    raw_values = lapply(fns, function(f) {
+      val = raster::extract(layers, geom)
+      val[!is.na(val)]
+    })
+    processed_values = lapply(seq_along(raw_values) %>% setNames(names(raw_values)), function(i) {
+      x = raw_values[[i]] %>% setNames(paste0("V", seq_along({.})))
+      column = lapply(seq_along(x), function(j) {
+        y = x[[j]]
+        colnames(y) = seq_len(dim(y)[2])
+        v = y %>%
+          as_tibble() %>%
+          pivot_longer(everything(), names_to=names_to) %>%
+          mutate(V = paste0("V", j),
+                 !!names_to  := as.numeric(!!rlang::sym(names_to)),
+                 .before=1)
+      }) %>%
+        bind_rows()
+    }) %>%
+      bind_rows(.id = "var") %>%
+      pivot_wider(names_from = var, values_fn = list)
+  } else {
+    # single value per geometry
+    raw_values = lapply(fns, function(f) raster::extract(layers, geom, FUN=f))
+    processed_values = lapply(seq_along(raw_values), function(i) {
+      x = raw_values[[i]] %>% st_drop_geometry() %>%
+        as_tibble() %>%
+        select(-geometry) %>%
+        t() %>%
+        as_tibble() %>%
+        mutate(!!names_to := row_number(), .before=1) %>%
+        pivot_longer(-!!names_to, names_to="V", values_to=var_names[[i]])
+      if (i > 1) {
+        x = x %>% select(!!var_names[[i]])
+      }
+      x
+    }) %>%
+      bind_cols()
+  }
+  
+  # Add original geometry information
+  geom %>%
+    st_drop_geometry() %>%
+    mutate(V = paste0("V", row_number())) %>%
+    right_join(processed_values, by="V") %>%
+    dplyr::select(-V) -> xx
+}
+
+tavg_sites = extract_layers(tavg, henan, "month")
+
+prec_sites = extract_layers(prec, henan, "month")
+```
+
+```{r}
+temp_henan = tavg_sites %>%
+  mutate(tavg = sapply(tavg_mean, mean)) %>%
+  select(month, tavg)
+prec_henan = prec_sites %>%
+  mutate(prec = sapply(prec_mean, mean)) %>%
+  select(month, prec)
+scale_prec = max(prec_henan$prec) / max(temp_henan)
+clim_henan = full_join(temp_henan, prec_henan, by="month") %>%
+  as_tibble() %>%
+  mutate(prec = prec / scale_prec) %>%
+  rename(Precipitation = prec,
+         Temperature = tavg)
+clim_plot = clim_henan %>%
+  pivot_longer(-month) %>%
+  ggplot(aes(x = month, y = value, color = name)) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:12, labels = sapply(month.abb, function(x) {substr(x,1,1)})) +
+  scale_y_continuous(sec.axis = sec_axis(trans = ~.*scale_prec, name="mm")) +
+  scale_color_manual(values = c("Precipitation"="darkblue", "Temperature"="tomato")) +
+  labs(color = NULL, x = "Month", y = "Celsius") + 
+  theme(legend.position = "bottom",
+        axis.ticks.y.left = element_line(color="tomato"),
+        axis.ticks.y.right = element_line(color="darkblue"),
+        axis.text.y.left = element_text(color="tomato"),
+        axis.text.y.right = element_text(color="darkblue"),
+        axis.title.y.left = element_text(color="tomato"),
+        axis.title.y.right = element_text(color="darkblue"))
+```
+
+```{r}
+map_plot + clim_plot + plot_layout(widths = c(2, 1))
+ggsave("../plots/henan.png", width=6, height=3, dpi=300)
+```

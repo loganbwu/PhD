@@ -65,7 +65,6 @@ Erlang dormancy with an exponential final relapse period
 d = 162
 dormancy_sd = 49
 dormancy_var = dormancy_sd^2
-delta = 1/d
 
 n_compartments = 11
 dist_exp = list(lambda=1/72, mean = 72, var=72^2)
@@ -74,13 +73,55 @@ dist_exp = list(lambda=1/72, mean = 72, var=72^2)
 
 n = 100000
 samples = tibble(i = seq_len(n),
-                 dormancy = rgamma(n, shape=d^2/dormancy_var, rate=d/dormancy_var),
-                 latency = rexp(n, rate=dist_exp$lambda),
-                 total = dormancy + latency)
+                 Dormancy = rgamma(n, shape=d^2/dormancy_var, rate=d/dormancy_var),
+                 Latency = rexp(n, rate=dist_exp$lambda),
+                 `Dormancy + latency` = Dormancy + Latency) %>%
+  pivot_longer(-i) %>%
+  mutate(name = fct_inorder(name))
 
 samples %>%
-  pivot_longer(-i) %>%
+  group_by(name) %>%
+  summarise(mean = mean(value),
+            sd = sd(value))
+
+quantile(samples$value[samples$name == "Dormancy + latency"], c(0.25, 0.75))
+mean(samples$value[samples$name == "Dormancy + latency"])
+sd(samples$value[samples$name == "Dormancy + latency"])
+
+library(bayesmeta)
+total_dist = convolve(function(x) {
+  dgamma(x, shape=d^2/dormancy_var, rate=d/dormancy_var)
+},
+function(x) {
+  dexp(x, rate=dist_exp$lambda)
+},
+delta = 0.000001,
+epsilon = 0.0001)
+analytic = tibble(
+  tt = seq(400),
+  Dormancy = dgamma(tt, shape=d^2/dormancy_var, rate=d/dormancy_var),
+  Latency = dexp(tt, rate=dist_exp$lambda),
+  `Dormancy + latency` = total_dist$density(tt)
+) %>%
+  pivot_longer(-tt) %>%
+  mutate(name = fct_inorder(name))
+
+samples %>%
   ggplot(aes(x = value, fill = name)) +
   geom_density(alpha=0.8, color="transparent") +
-  facet_wrap(vars(name), ncol=1)
+  facet_wrap(vars(name), ncol=1) +
+  coord_cartesian(xlim=c(0, 365)) +
+  labs(x = "Days", y = "Probability density") +
+  theme(legend.position = "none")
+
+analytic %>%
+  ggplot(aes(x = tt/365.25*12, y = value, fill = name)) +
+  geom_area(alpha=0.8, color="transparent") +
+  facet_wrap(vars(name), ncol=1) +
+  coord_cartesian(xlim=c(0, 12)) +
+  scale_x_continuous(breaks = c(0:12)) +
+  labs(x = "Months", y = "Probability density") +
+  theme(legend.position = "none")
+
+ggsave("../plots/analytic_relapse_duration.png", width=8, height=4)
 ```
