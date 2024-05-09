@@ -30,13 +30,14 @@ population = c("Dengzhou" = 1000000,
                "Thasongyang" = 10000,
                "Tengchong" = 1000000,
                "Yingjiang" = 100000,
-               "Shangqiu" = 1000000,
+               "Xiayi" = 1000000,
                "Hainan" = 9000000,
                "Wanning" = 100000)
 ```
 
 ```{r data}
 species_data = lapply(species, function(s) {
+  print(s)
   data_list = lapply(sites$shapeName %>% setNames({.}), function(x) {
     load_region(tolower(x), species=c(s, "Mixed"), source="all")
   }) %>%
@@ -202,6 +203,14 @@ seasonal_weighted = decomp %>%
          seasonal = seasonal / mean(seasonal)) %>% # normalised to average 1
   ungroup()
 
+x = seasonal_weighted %>%
+  group_by(Species, shapeName) %>%
+  mutate(seasonal = seasonal / 12) %>%
+  summarize(mean = sum(Month * seasonal),
+            sd = sqrt(sum(Month^2 * seasonal) - mean^2)) %>%
+  mutate(mean = mean * 365.25 / 12,
+         sd = sd * 365.25 / 12)
+
 save(seasonal_weighted, file="../data/china/seasonal_weighted.rda")
 
 ggplot(seasonal_weighted, aes(x=Month, y=seasonal, color=shapeName, group=shapeName)) +
@@ -230,7 +239,7 @@ ggsave(paste0("plots/china_seasonal_byprovince.svg"), width=6, height=4)
 Focus on a specific site
 
 ```{r}
-selection = "Shangqiu"
+selection = "Xiayi"
 
 temp_sites = NULL
 .get_month = function(t) {
@@ -263,6 +272,7 @@ make_suitability = function(selection) {
   }
 }
 
+suitability = make_suitability(selection)
 seasonal_weighted %>%
   pivot_wider(names_from=Species, values_from=seasonal) %>%
   # mutate(v_f_ratio = Vivax / Falciparum) %>%

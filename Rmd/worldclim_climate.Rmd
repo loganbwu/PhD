@@ -435,7 +435,7 @@ griffin_data = tibble(t = seq(0, years, length.out=500),
        `Sharp trough\nε=0, κ=1/4` = make_m(0, 1/4, years/4)(t),
        `Sharp peak\nε=0, κ=4` = make_m(0, 4, years/4)(t),
        `Nonseasonal\nε=1` = make_m(1, 1, years/4)(t),
-       `Shallow\nε=1, κ=1` = make_m(1/2, 1, years/4)(t),
+       `Shallow\nε=1/2, κ=1` = make_m(1/2, 1, years/4)(t),
        `Sinusoidal\nε=0, κ=1` = make_m(0, 1, years/4)(t)) %>%
   pivot_longer(-t) %>%
   mutate(name = name %>% str_replace(" - ", "\n")) %>%
@@ -505,14 +505,26 @@ fit_functions = lapply(fit_seasonalities, function(x) {
 ```
 
 ```{r}
-plot_data = map_sites %>%
-  select(shapeName, month, map = value) %>%
-  mutate(m = NA_real_)
+plot_data_map = map_sites %>%
+  select(region = shapeName, month, map = value) %>%
+  group_by(region) %>%
+  mutate(map = map / mean(map))
+plot_data_m = expand_grid(
+  month = seq(1, 12, length.out=100),
+  region = c("Huangchuan", "Wanning"),
+  m = NA_real_
+)
+for (i in seq_len(nrow(plot_data_m))) {
+  day = plot_data_m$month[i] * (365.25/12) + 15
+  region = plot_data_m$region[i]
+  plot_data_m$m[i] = fit_functions[[region]](day)
+}
 for (i in seq_len(nrow(plot_data))) {
   day = map_sites$month[i] * (365.25/12) + 15
   region = map_sites$shapeName[i]
   plot_data$m[i] = fit_functions[[region]](day)
 }
+plot_data =
 plot_data = plot_data %>%
   group_by(shapeName) %>%
   mutate(map = map / mean(map)) %>%

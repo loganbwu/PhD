@@ -53,13 +53,13 @@ tengchong = level3 %>% filter(shapeName == "Tengchong")
 yingjiang = level3 %>% filter(shapeName == "Yingjiang")
 huangchuan = level3 %>% filter(shapeName == "Huangchuan")
 dengzhou = level3 %>% filter(shapeName == "Deng") %>% mutate(shapeName = "Dengzhou")
-shangqiu = level2 %>% filter(shapeName == "Shangqiu")
+xiayi = level3 %>% filter(shapeName == "Xiayi")
 
 # guantang = townships %>% filter(shapeName == "Guantangxiang")
 guantang = level3 %>% filter(shapeName == "Luyi") %>% mutate(shapeName = "Guantang")
 maoyang = level3 %>% filter(shapeName == "BaotingLi") %>% mutate(shapeName = "Maoyang")
 
-sites = bind_rows(huangchuan, dengzhou, shangqiu, guantang, tengchong, yingjiang, maoyang, wanning, hainan) %>%
+sites = bind_rows(huangchuan, dengzhou, xiayi, guantang, tengchong, yingjiang, maoyang, wanning, hainan) %>%
   dplyr::select(shapeName, shapeProvince=NAME_1, shapeNameCN)
 st_write(sites, "../data/china/sites.geojson", delete_dsn=T)
 
@@ -104,7 +104,7 @@ ggplot() +
   theme(text = element_text(size=24)) +
   labs(x = NULL, y = NULL)
 
-ggsave("plots/china_sites.png", width=6, height=4, scale=1)
+ggsave("../plots/china_sites.png", width=6, height=4, scale=1)
 ```
 
 ```{r}
@@ -135,13 +135,14 @@ map_plot = ggplot() +
   geom_sf(data = borders, color="grey", fill="grey") +
   geom_sf(data = level1, color="white", fill="grey") +
   geom_sf(data=henan, fill="#00FFFF", color="#00FFFF", linewidth=1, alpha=0.5) +
-  geom_sf(data=cities_plot) +
+  geom_sf(data=cities_plot, size=0.1) +
   # geom_sf_text(data=cities_plot, aes(label=name)) +
   ggrepel::geom_text_repel(
     data = cities_plot,
     aes(label = name, geometry = geometry),
     stat = "sf_coordinates",
-    min.segment.length = 0
+    min.segment.length = 0,
+    segment.color = "transparent"
   ) +
   geom_sf_text(data=henan, aes(label=paste(shapeNameCN, str_remove(shapeName, " Province")))) +
   coord_sf_bbox(china) +
@@ -151,6 +152,27 @@ map_plot = ggplot() +
         axis.ticks.x = element_blank(),
         axis.text.x = element_blank()) +
   labs(x = NULL, y = NULL)
+```
+
+```{r}
+henan_plot = ggplot() +
+  # geom_sf(data = henan, color="grey", fill="grey") +
+  geom_sf(data = henan, color="#00FFFF", fill="#00FFFF", linewidth=1, alpha=0.5) +
+  geom_sf(data=bind_rows(guantang, dengzhou), fill="#FF00FF", color="#FF00FF", linewidth=1, alpha=0.5) +
+  ggrepel::geom_text_repel(
+    data = bind_rows(guantang, dengzhou),
+    aes(label = shapeName, geometry = geometry),
+    # size = 12,
+    stat = "sf_coordinates"
+  ) +
+  geom_sf_text(data=henan, aes(label=paste(shapeNameCN, str_remove(shapeName, " Province")))) +
+  theme(panel.background = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  labs(x = NULL, y = NULL)
+henan_plot
 ```
 
 ```{r}
@@ -285,10 +307,10 @@ clim_plot = clim_henan %>%
   ggplot(aes(x = month, y = value, color = name)) +
   geom_line() +
   scale_x_continuous(breaks = 1:12, labels = sapply(month.abb, function(x) {substr(x,1,1)})) +
-  scale_y_continuous(sec.axis = sec_axis(trans = ~.*scale_prec, name="mm")) +
+  scale_y_continuous(sec.axis = sec_axis(trans = ~.*scale_prec, name="Precipitation (mm)")) +
   scale_color_manual(values = c("Precipitation"="darkblue", "Temperature"="tomato")) +
-  labs(color = NULL, x = "Month", y = "Celsius") + 
-  theme(legend.position = "bottom",
+  labs(color = NULL, x = "Month", y = "Mean temperature (°C)") + 
+  theme(legend.position = "none",
         axis.ticks.y.left = element_line(color="tomato"),
         axis.ticks.y.right = element_line(color="darkblue"),
         axis.text.y.left = element_text(color="tomato"),
@@ -298,6 +320,30 @@ clim_plot = clim_henan %>%
 ```
 
 ```{r}
-map_plot + clim_plot + plot_layout(widths = c(2, 1))
-ggsave("../plots/henan.png", width=6, height=3, dpi=300)
+(map_plot + henan_plot) / clim_plot + plot_layout(heights = c(2, 1))
+ggsave("../plots/henan.png", width=8, height=4)
+```
+
+Just Guantang and Dengzhou for the second results chapter
+
+```{r}
+ggplot() +
+  geom_sf(data = borders, color="grey", fill="grey") +
+  geom_sf(data = level1, color="white", fill="grey") +
+  # geom_sf(data=china, color="white", fill="transparent", linewidth=0.5) +
+  geom_sf(data=provinces_oi, fill="pink", color="white", alpha=1) +
+  geom_sf(data=sites, fill="#00FFFF", color="#00FFFF", linewidth=0.25, alpha=0.5) +
+  # geom_sf_text(data=sites %>% distinct(shapeName, .keep_all=T), aes(label=shapeName)) +
+  ggrepel::geom_text_repel(
+    data = sites %>% distinct(shapeName, .keep_all=T),
+    aes(label = shapeName, geometry = geometry),
+    size = 12,
+    stat = "sf_coordinates"
+  ) +
+  coord_sf_bbox(provinces_oi, buffer=2e5) +
+  theme_minimal() +
+  theme(text = element_text(size=24)) +
+  labs(x = NULL, y = NULL)
+
+ggsave("../plots/china_sites.png", width=6, height=4, scale=1)
 ```
