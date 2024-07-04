@@ -7,7 +7,7 @@ library(GGally)
 n_delays = 5
 
 labels = c("S[0]", "S[L[1]]", "S[L[2]]", "S[L[K]]", "I[L[K]]")
-edge_labels = c("Hypnozoite inoculation", "Advancement\nδ×n", "Advancement...\nδ×...", "Relapse\nƒ", "Recovery/treatment")
+edge_labels = c("Hypnozoite inoculation", "Advancement\nδ×n", "Advancement...\nδ×...", "Relapse\nƒ", "Recovery/\ntreatment if detected")
 edge_linetype = c(1, 1, 2, 1, 1)
 
 # labels = c("S[0]", paste0("S[L", seq_len(n_delays), "]"), paste0("I[L", n_delays, "]"))

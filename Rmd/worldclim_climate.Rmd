@@ -431,12 +431,12 @@ What is the Griffin seasonality function?
 years = 365.25
 
 griffin_data = tibble(t = seq(0, years, length.out=500),
-       `Delayed\nε=0, κ=1, ψ−=π/4` = make_m(0, 1, years/2)(t),
-       `Sharp trough\nε=0, κ=1/4` = make_m(0, 1/4, years/4)(t),
-       `Sharp peak\nε=0, κ=4` = make_m(0, 4, years/4)(t),
-       `Nonseasonal\nε=1` = make_m(1, 1, years/4)(t),
-       `Shallow\nε=1/2, κ=1` = make_m(1/2, 1, years/4)(t),
-       `Sinusoidal\nε=0, κ=1` = make_m(0, 1, years/4)(t)) %>%
+       `Delayed\nε=0, κ=1, ψ=274` = make_m(0, 1, 365.25*3/4)(t),
+       `Sharp trough\nε=0, κ=1/4, ψ=365/2` = make_m(0, 1/4, 365.25/2)(t),
+       `Sharp peak\nε=0, κ=4, ψ=365/2` = make_m(0, 4, 365.25/2)(t),
+       `Nonseasonal\nε=1` = make_m(1, 1, 365.25/2)(t),
+       `Shallow\nε=1/2, κ=1, ψ=365/2` = make_m(1/2, 1, 365.25/2)(t),
+       `Sinusoidal\nε=0, κ=1, ψ=365/2` = make_m(0, 1, 365.25/2)(t)) %>%
   pivot_longer(-t) %>%
   mutate(name = name %>% str_replace(" - ", "\n")) %>%
   mutate(name = fct_inorder(name) %>% fct_rev())
@@ -458,7 +458,7 @@ ggplot(griffin_data, aes(x = t/years*12, y = value, color = name)) +
   scale_color_manual(values = griffin_colors) +
   theme(legend.position = "none",
         strip.text = element_blank()) +
-  labs(title = "Transformations of the Griffin seasonality function",
+  labs(title = "Variations of the Griffin seasonality function",
        x = "Month",
        y = "Transmissibility multiplier")
 
@@ -482,7 +482,7 @@ diff_seasonality = function(x, data) {
 }
 
 
-init_params = c(0, 1, years/4/2, 1)
+init_params = c(0, 1, 220, 1)
 fit_seasonality = function(region) {
   data = map_sites %>%
   filter(shapeName == region) %>%
@@ -506,30 +506,24 @@ fit_functions = lapply(fit_seasonalities, function(x) {
 
 ```{r}
 plot_data_map = map_sites %>%
-  select(region = shapeName, month, map = value) %>%
-  group_by(region) %>%
-  mutate(map = map / mean(map))
+  select(shapeName, month, value)
 plot_data_m = expand_grid(
   month = seq(1, 12, length.out=100),
-  region = c("Huangchuan", "Wanning"),
-  m = NA_real_
+  shapeName = c("Huangchuan", "Wanning"),
+  value = NA_real_
 )
 for (i in seq_len(nrow(plot_data_m))) {
   day = plot_data_m$month[i] * (365.25/12) + 15
-  region = plot_data_m$region[i]
-  plot_data_m$m[i] = fit_functions[[region]](day)
+  shapeName = plot_data_m$shapeName[i]
+  plot_data_m$value[i] = fit_functions[[shapeName]](day)
 }
-for (i in seq_len(nrow(plot_data))) {
-  day = map_sites$month[i] * (365.25/12) + 15
-  region = map_sites$shapeName[i]
-  plot_data$m[i] = fit_functions[[region]](day)
-}
-plot_data =
-plot_data = plot_data %>%
-  group_by(shapeName) %>%
-  mutate(map = map / mean(map)) %>%
-  pivot_longer(c(map, m)) %>%
-  mutate(name = case_match(name,
+
+plot_data = bind_rows(map = plot_data_map,
+                      m = plot_data_m,
+                      .id = "source") %>%
+  group_by(shapeName, source) %>%
+  mutate(value = value / mean(value)) %>%
+  mutate(name = case_match(source,
                            "m" ~ "MLE ω(t)",
                            "map" ~ "Malaria Atlas")) %>%
   filter(shapeName %in% c("Huangchuan", "Wanning"))

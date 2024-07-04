@@ -135,15 +135,15 @@ map_plot = ggplot() +
   geom_sf(data = borders, color="grey", fill="grey") +
   geom_sf(data = level1, color="white", fill="grey") +
   geom_sf(data=henan, fill="#00FFFF", color="#00FFFF", linewidth=1, alpha=0.5) +
-  geom_sf(data=cities_plot, size=0.1) +
+  # geom_sf(data=cities_plot, size=0.1) +
   # geom_sf_text(data=cities_plot, aes(label=name)) +
-  ggrepel::geom_text_repel(
-    data = cities_plot,
-    aes(label = name, geometry = geometry),
-    stat = "sf_coordinates",
-    min.segment.length = 0,
-    segment.color = "transparent"
-  ) +
+  # ggrepel::geom_text_repel(
+  #   data = cities_plot,
+  #   aes(label = name, geometry = geometry),
+  #   stat = "sf_coordinates",
+  #   min.segment.length = 0,
+  #   segment.color = "transparent"
+  # ) +
   geom_sf_text(data=henan, aes(label=paste(shapeNameCN, str_remove(shapeName, " Province")))) +
   coord_sf_bbox(china) +
   scale_y_continuous(breaks=cities_comparison$lat,
@@ -284,44 +284,37 @@ extract_layers = function(layers, geom, names_to="layer", use_area_weighted_quan
     dplyr::select(-V) -> xx
 }
 
-tavg_sites = extract_layers(tavg, henan, "month")
+tavg_sites = extract_layers(tavg, sites, "month")
 
-prec_sites = extract_layers(prec, henan, "month")
+prec_sites = extract_layers(prec, sites, "month")
 ```
 
 ```{r}
 temp_henan = tavg_sites %>%
+  group_by(shapeName) %>%
   mutate(tavg = sapply(tavg_mean, mean)) %>%
   select(month, tavg)
 prec_henan = prec_sites %>%
+  group_by(shapeName) %>%
   mutate(prec = sapply(prec_mean, mean)) %>%
   select(month, prec)
-scale_prec = max(prec_henan$prec) / max(temp_henan)
-clim_henan = full_join(temp_henan, prec_henan, by="month") %>%
+clim_henan = full_join(temp_henan, prec_henan, by=c("shapeName", "month")) %>%
   as_tibble() %>%
-  mutate(prec = prec / scale_prec) %>%
-  rename(Precipitation = prec,
-         Temperature = tavg)
+  rename(`Precipitation (mm)`= prec,
+         `Temperature (°C)` = tavg) %>%
+  filter(shapeName %in% c("Dengzhou", "Guantang"))
 clim_plot = clim_henan %>%
-  pivot_longer(-month) %>%
-  ggplot(aes(x = month, y = value, color = name)) +
+  pivot_longer(-c(month, shapeName)) %>%
+  ggplot(aes(x = month, y = value, color = shapeName)) +
   geom_line() +
+  facet_wrap(vars(name), ncol=1, scales="free_y") +
   scale_x_continuous(breaks = 1:12, labels = sapply(month.abb, function(x) {substr(x,1,1)})) +
-  scale_y_continuous(sec.axis = sec_axis(trans = ~.*scale_prec, name="Precipitation (mm)")) +
-  scale_color_manual(values = c("Precipitation"="darkblue", "Temperature"="tomato")) +
-  labs(color = NULL, x = "Month", y = "Mean temperature (°C)") + 
-  theme(legend.position = "none",
-        axis.ticks.y.left = element_line(color="tomato"),
-        axis.ticks.y.right = element_line(color="darkblue"),
-        axis.text.y.left = element_text(color="tomato"),
-        axis.text.y.right = element_text(color="darkblue"),
-        axis.title.y.left = element_text(color="tomato"),
-        axis.title.y.right = element_text(color="darkblue"))
+  labs(color = NULL, x = "Month", y = NULL)
 ```
 
 ```{r}
 (map_plot + henan_plot) / clim_plot + plot_layout(heights = c(2, 1))
-ggsave("../plots/henan.png", width=8, height=4)
+ggsave("../plots/henan.png", width=8, height=4, dpi=150)
 ```
 
 Just Guantang and Dengzhou for the second results chapter

@@ -8,27 +8,85 @@ Investigate what ODE structure would be required for a delayed relapse.
 ```{r setup}
 library(tidyverse)
 library(readxl)
+library(patchwork)
 ```
 
+Investigate Guojing's relapse data
+
 ```{r}
-relapse = read_excel("../data/china/Guantang Relapse Data - GJY.xlsx", "Relapse", skip=1) %>%
+relapse = read_excel("../data/china/Guantang Relapse Data - GJY.xlsx", "Relapse expanded", skip=1) %>%
   mutate_all(as.character) %>%
-  pivot_longer(cols=matches("relapse"), names_to="event", values_to="delay") %>%
-  mutate(delay = as.numeric(delay))
+  filter(!str_detect(Volunteer, "participants")) %>%
+  pivot_longer(cols=matches("Incub|relapse"), names_to="event", values_to="delay") %>%
+  mutate(delay = delay %>% as.numeric(),
+         event = ifelse(str_detect(event, "Inc"), "0 Incubation period", event)) %>%
+  drop_na(delay)
 
 ggplot(relapse, aes(x=delay, fill=event)) +
   geom_histogram(binwidth=30) +
   facet_wrap(vars(event), ncol=1)
-
-sample_1st = relapse %>%
-  filter(event == "1st relapse",
-         delay > 100) %>%
-  pull(delay)
-sample_mean = mean(sample_1st)
-sample_var = var(sample_1st)
-
 ```
 
+Individual level
+
+```{r}
+indv = relapse %>%
+  arrange(Volunteer, event) %>%
+  mutate(event_num = as.numeric(substr(event, 1, 1)),
+         event = fct_relevel(event, sort(levels(event)))) %>%
+  group_by(Volunteer) %>%
+  mutate(marginal_delay = delay - lag(delay, default=0)) %>%
+  select(Volunteer, event, event_num, delay, marginal_delay) %>%
+  ungroup() %>%
+  mutate(is_long = event_num <= 1 & marginal_delay >= 120,
+         is_short = event_num > 1 | event_num == 1 & marginal_delay < 120,
+         event_type = case_when(is_long ~ "long",
+                                is_short ~ "short",
+                                T ~ "primary") %>%
+           fct_relevel(c("long", "short", "primary")))
+
+p1 = ggplot(indv, aes(x=delay/365.25*12, y=event, group=Volunteer)) +
+  geom_line(alpha = 0.5) +
+  geom_point(alpha = 0.5) +
+  scale_x_continuous(breaks = 1:15) +
+  labs(subtitle = "Individual volunteer events after primaryation")
+
+p2 = ggplot(indv, aes(x=marginal_delay/365.25*12, y=event, color=event_type, group=Volunteer)) +
+  geom_point(alpha = 0.5) +
+  scale_x_continuous(breaks = 1:15) +
+  labs(subtitle = "Individual volunteer delays after previous event")
+
+p1 / p2 + plot_layout(guides = "collect")
+```
+
+Can we use the above graph to calibrate?
+
+```{r}
+short_relapses = indv %>%
+  filter(is_short)
+long_relapses = indv %>%
+  filter(is_long)
+
+stats = indv %>%
+  group_by(event_type) %>%
+  summarise(mean_delay = mean(marginal_delay),
+            var = var(marginal_delay))
+
+# Therefore
+f = 1/stats$mean_delay[2]
+delta = 1/(stats$mean_delay[1] - stats$mean_delay[2]) # delta = rate/shape
+var_gamma = stats$var[1] - stats$var[2]
+# mean = k*theta
+# var = mean*theta
+# delta = theta/k
+# theta = mean/var
+# k = theta/delta = mean/var/delta
+# k = (stats$mean_delay[1] - stats$mean_delay[2]) / var_gamma / delta
+
+# Note: based on this, 1/f = 64.2, 1/delta = 158.1, n_compartments = 24.6
+```
+
+Algebra
 m = a/b
 v = a/b^2
 v = m/b
@@ -37,18 +95,18 @@ a = m*b
 a = mean^2/variance
 
 ```{r}
-sample_mean = sample_mean - 72
-sample_var = sample_var - 1/(1/72)^2
+sample_mean = stats$mean_delay[1] - stats$mean_delay[2]
+sample_var = var_gamma
 # shape = 50 # number of compartments
 shape = sample_mean^2 / sample_var
 # rate = 1/2 # rate = 1 / mean time spent in each compartment
 rate = sample_mean / sample_var
 
 
-time = seq(0, 365*2, length.out=1000)
+time = seq(0, 365.25*2, length.out=1000)
 tibble(time=time,
        density = dgamma(time, round(shape), 1/(round(1/rate)))) %>%
-  ggplot(aes(x=time, y=density)) +
+  ggplot(aes(x=time/365.25*12, y=density)) +
   geom_line()
 
 # n = 1000
@@ -59,69 +117,157 @@ tibble(time=time,
 #   geom_density()
 ```
 
+```{r}
+message("1/f: ", 1/f)
+message("1/delta: ", 1/delta)
+message("shape: ", shape)
+```
+
 Erlang dormancy with an exponential final relapse period
 
 ```{r}
-d = 162
-dormancy_sd = 49
-dormancy_var = dormancy_sd^2
-
-n_compartments = 11
-dist_exp = list(lambda=1/72, mean = 72, var=72^2)
-
-
-
-n = 100000
-samples = tibble(i = seq_len(n),
-                 Dormancy = rgamma(n, shape=d^2/dormancy_var, rate=d/dormancy_var),
-                 Latency = rexp(n, rate=dist_exp$lambda),
-                 `Dormancy + latency` = Dormancy + Latency) %>%
-  pivot_longer(-i) %>%
-  mutate(name = fct_inorder(name))
-
-samples %>%
-  group_by(name) %>%
-  summarise(mean = mean(value),
-            sd = sd(value))
-
-quantile(samples$value[samples$name == "Dormancy + latency"], c(0.25, 0.75))
-mean(samples$value[samples$name == "Dormancy + latency"])
-sd(samples$value[samples$name == "Dormancy + latency"])
-
-library(bayesmeta)
-total_dist = convolve(function(x) {
-  dgamma(x, shape=d^2/dormancy_var, rate=d/dormancy_var)
-},
-function(x) {
-  dexp(x, rate=dist_exp$lambda)
-},
-delta = 0.000001,
-epsilon = 0.0001)
+# library(bayesmeta)
+# total_dist = convolve(function(x) {
+#   dgamma(x, shape=dist_erlang$k, rate=dist_erlang$rate)
+# },
+# function(x) {
+#   dexp(x, rate=dist_exp$lambda)
+# },
+# # delta = 0.000001,
+# # epsilon = 0.0001
+# )
 analytic = tibble(
   tt = seq(400),
-  Dormancy = dgamma(tt, shape=d^2/dormancy_var, rate=d/dormancy_var),
+  Dormancy = dgamma(tt, shape=dist_erlang$k, rate=dist_erlang$rate),
   Latency = dexp(tt, rate=dist_exp$lambda),
   `Dormancy + latency` = total_dist$density(tt)
 ) %>%
   pivot_longer(-tt) %>%
   mutate(name = fct_inorder(name))
 
-samples %>%
-  ggplot(aes(x = value, fill = name)) +
-  geom_density(alpha=0.8, color="transparent") +
-  facet_wrap(vars(name), ncol=1) +
-  coord_cartesian(xlim=c(0, 365)) +
-  labs(x = "Days", y = "Probability density") +
-  theme(legend.position = "none")
+sample_relapses = function(delta, n_compartments, f) {
+  dist_erlang = list(k = n_compartments, mean = 1/delta)
+  dist_erlang$rate = with(dist_erlang, k / mean)
+  dist_exp = list(lambda=f, mean = 1/f, var=1/f^2)
+  
+  n = 100000
+  samples = tibble(i = seq_len(n),
+                   Dormancy = rgamma(n, shape=dist_erlang$k, rate=dist_erlang$rate),
+                   Latency = rexp(n, rate=dist_exp$lambda),
+                   `Dormancy + latency` = Dormancy + Latency) %>%
+    pivot_longer(-i) %>%
+    mutate(name = fct_inorder(name))
+  
+  samples %>%
+    group_by(name) %>%
+    summarise(mean = mean(value),
+              sd = sd(value))
+  
+  quantile(samples$value[samples$name == "Dormancy + latency"], c(0.25, 0.75))
+  mean(samples$value[samples$name == "Dormancy + latency"])
+  sd(samples$value[samples$name == "Dormancy + latency"])
+  return(samples)
+}
 
-analytic %>%
-  ggplot(aes(x = tt/365.25*12, y = value, fill = name)) +
-  geom_area(alpha=0.8, color="transparent") +
-  facet_wrap(vars(name), ncol=1) +
-  coord_cartesian(xlim=c(0, 12)) +
-  scale_x_continuous(breaks = c(0:12)) +
-  labs(x = "Months", y = "Probability density") +
-  theme(legend.position = "none")
+samples_list = list(
+  `δ=1/162, k=11` = sample_relapses(1/162, 11, 1/72),
+  `δ=1/240, k=22` = sample_relapses(1/240, 22, 1/72),
+  `δ=1/240, k=100` = sample_relapses(1/240, 100, 1/72),
+  `δ=1/240, k=1000` = sample_relapses(1/240, 1000, 1/72),
+  `TODO` = sample_relapses(delta, shape, f))
+names(samples_list)[5] = paste0("δ=1/", round(1/delta), ", k=", round(shape), ", f=1/", round(1/f))
+samples = samples_list %>%
+  bind_rows(.id = "Scenario") %>%
+  mutate(Scenario = fct_inorder(Scenario))
 
-ggsave("../plots/analytic_relapse_duration.png", width=8, height=4)
+relapse_plot = samples %>%
+  ggplot(aes(x = value/365.25*12, fill = name)) +
+  geom_density(aes(y=..scaled..), alpha=0.8, color="transparent", adjust=0.01) +
+  # facet_wrap(vars(name), ncol=1) +
+  facet_grid(rows = vars(Scenario), cols = vars(name)) +
+  coord_cartesian(xlim=c(0, 16)) +
+  scale_x_continuous(breaks = c(0:18)) +
+  theme(legend.position = "none") +
+  labs(x = "Months", y = NULL)
+relapse_plot
+
+# analytic %>%
+#   ggplot(aes(x = tt/365.25*12, y = value, fill = name)) +
+#   geom_area(alpha=0.8, color="transparent") +
+#   facet_wrap(vars(name), ncol=1) +
+#   coord_cartesian(xlim=c(0, 12)) +
+#   scale_x_continuous(breaks = c(0:12)) +
+#   labs(x = "Months", y = "Probability density (analytic)") +
+#   theme(legend.position = "none")
+
+# ggsave("../plots/analytic_relapse_duration_delta220.png", width=8, height=4)
+```
+
+Plot original data with fit distribution
+
+```{r}
+china_fit = samples %>%
+  filter(Scenario == paste0("δ=1/", round(1/delta), ", k=", round(shape), ", f=1/", round(1/f))) %>%
+  mutate(event_type = case_match(name,
+                                 "Latency" ~ "short",
+                                 "Dormancy + latency" ~ "long") %>%
+           fct_relevel(levels(indv$event_type))) %>%
+  right_join(indv, by="event_type") %>%
+  mutate(event_type = case_match(event_type,
+                                 "short" ~ "Latency (short delay)",
+                                 "long" ~ "Dormancy + latency\n(long delay)",
+                                 "primary" ~ "No delay") %>%
+           fct_inorder() %>%
+           fct_relevel("No delay"),
+         event = event %>% str_remove("^0 ") %>%
+           fct_relevel("Incubation period"))
+
+indv_2 = indv %>%
+  mutate(event_type = case_match(event_type,
+                                 "short" ~ "Latency (short delay)",
+                                 "long" ~ "Dormancy + latency\n(long delay)",
+                                 "primary" ~ "No delay") %>%
+           fct_inorder() %>%
+           fct_relevel("No delay"),
+         event = event %>% str_remove("^0 ") %>%
+           fct_relevel("Incubation period"))
+
+ggplot() +
+  # geom_point(alpha = 0.5) +
+  ggridges::geom_density_ridges(data=china_fit, aes(x=value/365.25*12, y=event, color=event_type, fill=event_type), alpha=0.3) +
+  geom_point(data=indv_2, aes(x=marginal_delay/365.25*12, y=event, color=event_type, group=Volunteer)) +
+  scale_x_continuous(breaks = 0:15, limits=c(0, 15)) +
+  scale_color_discrete(drop=F) +
+  scale_fill_discrete(drop=F) +
+  labs(title = "Individual volunteer infection delays",
+       subtitle = paste("Densities show fit with", names(samples_list)[5]),
+       x = "Months since previous event",
+       y = NULL,
+       color = "Event type",
+       fill = "Event type")
+
+ggsave("../plots/volunteer_relapses.png", width=8, height=4)
+```
+
+How about the proportion of long relapses?
+
+```{r}
+short_incubation_people = indv %>%
+  filter(event_num == 0,
+         !is_long)
+
+long_relapses = indv %>%
+  filter(Volunteer %in% short_incubation_people$Volunteer) %>%
+  filter(event_num == 1,
+         is_long)
+
+short_relapses = indv %>%
+  filter(Volunteer %in% short_incubation_people$Volunteer) %>%
+  filter(event_num == 1,
+         is_short)
+proportion = nrow(long_relapses) / nrow(short_relapses)
+
+p_long = seq(0, 1, length.out=100)
+yy = dbeta(p_long, nrow(long_relapses), nrow(short_relapses))
+plot(p_long, yy, 'l')
 ```
