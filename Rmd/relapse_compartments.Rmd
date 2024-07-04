@@ -136,19 +136,22 @@ Erlang dormancy with an exponential final relapse period
 # # delta = 0.000001,
 # # epsilon = 0.0001
 # )
-analytic = tibble(
-  tt = seq(400),
-  Dormancy = dgamma(tt, shape=dist_erlang$k, rate=dist_erlang$rate),
-  Latency = dexp(tt, rate=dist_exp$lambda),
-  `Dormancy + latency` = total_dist$density(tt)
-) %>%
-  pivot_longer(-tt) %>%
-  mutate(name = fct_inorder(name))
+dist_erlang = list(k = shape, mean = 1/delta)
+dist_erlang$rate = with(dist_erlang, k / mean)
+
+
+dist_exp = list(lambda=f, mean = 1/f, var=1/f^2)
+
+# analytic = tibble(
+#   tt = seq(400),
+#   Dormancy = dgamma(tt, shape=dist_erlang$k, rate=dist_erlang$rate),
+#   Latency = dexp(tt, rate=dist_exp$lambda),
+#   `Dormancy + latency` = total_dist$density(tt)
+# ) %>%
+#   pivot_longer(-tt) %>%
+#   mutate(name = fct_inorder(name))
 
 sample_relapses = function(delta, n_compartments, f) {
-  dist_erlang = list(k = n_compartments, mean = 1/delta)
-  dist_erlang$rate = with(dist_erlang, k / mean)
-  dist_exp = list(lambda=f, mean = 1/f, var=1/f^2)
   
   n = 100000
   samples = tibble(i = seq_len(n),
@@ -220,7 +223,32 @@ china_fit = samples %>%
            fct_inorder() %>%
            fct_relevel("No delay"),
          event = event %>% str_remove("^0 ") %>%
-           fct_relevel("Incubation period"))
+           fct_relevel("Incubation period")) %>%
+  filter(event_type != "Latency (short delay)")
+
+china_fit_dens = china_fit %>%
+  filter(event_type == "Dormancy + latency\n(long delay)") %>%
+  pull(value) %>%
+  density()
+china_fit_df = lapply(unique(china_fit$event[china_fit$event_num <= 1]), function(e) {
+  tibble(
+    value = china_fit_dens$x,
+    density = china_fit_dens$y,
+    event_type = "Dormancy + latency\n(long delay)",
+    event = e
+  )
+}) %>%
+  bind_rows()
+
+china_analytic = expand_grid(
+  value = seq(0, 15*30.4, length.out=100),
+  event = unique(indv$event[indv$event_num > 0]),
+  event_type = "Latency (short delay)"
+) %>%
+  mutate(density = dexp(value, f))
+
+china_plot_data = bind_rows(china_fit_df, china_analytic) %>%
+  mutate(event_type = fct_relevel(event_type, "No delay"))
 
 indv_2 = indv %>%
   mutate(event_type = case_match(event_type,
@@ -234,11 +262,13 @@ indv_2 = indv %>%
 
 ggplot() +
   # geom_point(alpha = 0.5) +
-  ggridges::geom_density_ridges(data=china_fit, aes(x=value/365.25*12, y=event, color=event_type, fill=event_type), alpha=0.3) +
-  geom_point(data=indv_2, aes(x=marginal_delay/365.25*12, y=event, color=event_type, group=Volunteer)) +
+  # ggridges::geom_density_ridges(data=china_fit, aes(x=value/365.25*12, y=event, color=event_type, fill=event_type), alpha=0.3) +
+  ggridges::geom_ridgeline(data=china_plot_data, aes(x=value/365.25*12, y=event, height=density*50, color=event_type, fill=event_type), alpha=0.3) +
+  geom_point(data=indv_2, aes(x=marginal_delay/365.25*12, y=event, color=event_type, fill=event_type, group=Volunteer)) +
   scale_x_continuous(breaks = 0:15, limits=c(0, 15)) +
-  scale_color_discrete(drop=F) +
-  scale_fill_discrete(drop=F) +
+  # scale_color_discrete(drop=F) +
+  # scale_fill_discrete(drop=F) +
+  # scale_color_manual(values = c("Latency (short delay)"="red", "Dormancy + latency\n(long delay)"="green", "No delay"="blue")) +
   labs(title = "Individual volunteer infection delays",
        subtitle = paste("Densities show fit with", names(samples_list)[5]),
        x = "Months since previous event",
